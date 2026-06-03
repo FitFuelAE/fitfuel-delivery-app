@@ -216,9 +216,10 @@ function card(o){
 function toggleIssue(id){ document.getElementById("iss-"+id).classList.toggle("open"); }
 
 // ---- Geolocation: ask once, keep the latest fix while the app is active ----
-let CURRENT_POS=null;
+let CURRENT_POS=null, GEO_ON=false;
 function startGeo(){
-  if(!("geolocation" in navigator)) return;
+  if(GEO_ON || !("geolocation" in navigator)) return;
+  GEO_ON=true;
   navigator.geolocation.watchPosition(
     p=>{ CURRENT_POS={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}; },
     ()=>{},

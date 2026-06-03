@@ -467,9 +467,10 @@ function ocard(o){
 function otoggleIssue(id){ document.getElementById("oiss-"+id).classList.toggle("open"); }
 
 // ---- Geolocation + proof-photo fulfil (mirrors the driver app) ----
-let CURRENT_POS=null;
+let CURRENT_POS=null, GEO_ON=false;
 function startGeo(){
-  if(!("geolocation" in navigator)) return;
+  if(GEO_ON || !("geolocation" in navigator)) return;
+  GEO_ON=true;
   navigator.geolocation.watchPosition(
     p=>{ CURRENT_POS={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}; },
     ()=>{},
