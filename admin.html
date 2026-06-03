@@ -522,11 +522,11 @@ async function confirmOFulfill(id){
   const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const el=document.getElementById("ocard-"+id); el.classList.add("fade");
   try{
-    await api("/fulfill",{method:"POST",body:JSON.stringify({
+    const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
       orderGid:id, photo:OPHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
-    toast("✓ Fulfilled");
+    toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
     delete OPHOTOS[id];
     el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
   }catch(e){ el.classList.remove("fade"); toast(e.message); }

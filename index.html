@@ -276,11 +276,11 @@ async function confirmFulfill(id){
   const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
-    await api("/fulfill",{method:"POST",body:JSON.stringify({
+    const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
       orderGid:id, photo:PHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
-    toast("✓ Fulfilled");
+    toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
     delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
