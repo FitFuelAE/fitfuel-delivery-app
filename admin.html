@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#16a34a" />
+<meta name="robots" content="noindex" />
+<title>FitFuel Delivery — Admin</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root { --green:#16a34a; --green-d:#15803d; --bg:#f5f6f8; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --red:#dc2626; --amber:#d97706; }
+  html,body { margin:0; padding:0; background:var(--bg); color:#111827;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  header { position:sticky; top:0; z-index:10; background:var(--green); color:#fff;
+    padding:calc(env(safe-area-inset-top) + 14px) 16px 14px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size:18px; margin:0; font-weight:700; }
+  header .sub { font-size:12px; opacity:.85; margin-top:2px; }
+  header button { background:rgba(255,255,255,.2); color:#fff; border:none; border-radius:8px;
+    padding:8px 12px; font-size:14px; font-weight:600; }
+  .wrap { padding:16px; max-width:760px; margin:0 auto; }
+
+  /* Login */
+  .login { min-height:100dvh; display:flex; flex-direction:column; justify-content:center; padding:24px; max-width:420px; margin:0 auto; }
+  .login h2 { text-align:center; margin:0 0 6px; }
+  .login p.tag { text-align:center; color:var(--muted); margin:0 0 24px; font-size:14px; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:14px 0 6px; }
+  input, select { width:100%; padding:14px; font-size:17px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  input:focus, select:focus { outline:none; border-color:var(--green); }
+  .btn { width:100%; padding:16px; font-size:17px; font-weight:700; border:none; border-radius:12px;
+    background:var(--green); color:#fff; margin-top:20px; }
+  .btn:active { background:var(--green-d); }
+  .btn[disabled] { opacity:.6; }
+  .btn.ghost { background:#fff; color:#374151; border:1px solid var(--line); }
+  .btn.danger { background:#fff; color:var(--red); border:1px solid var(--line); }
+  .btn.sm { width:auto; padding:8px 12px; font-size:13px; margin-top:0; border-radius:9px; }
+
+  /* Tabs */
+  .tabs { display:flex; gap:8px; margin:0 0 16px; }
+  .tabs button { flex:1; padding:12px; border:1px solid var(--line); background:#fff; border-radius:10px;
+    font-size:15px; font-weight:600; color:#374151; }
+  .tabs button.on { background:var(--green); color:#fff; border-color:var(--green); }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .card h3 { margin:0 0 4px; font-size:16px; }
+  .card .hint { color:var(--muted); font-size:13px; margin:0 0 6px; }
+  .row2 { display:flex; gap:10px; flex-wrap:wrap; }
+  .row2 > div { flex:1; min-width:120px; }
+
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:10px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); }
+  td.actions { white-space:nowrap; display:flex; gap:6px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
+  .pill.on { background:#dcfce7; color:var(--green-d); }
+  .pill.off { background:#fee2e2; color:var(--red); }
+  .pill.status { background:#eef2ff; color:#3730a3; }
+
+  .empty, .loading { text-align:center; color:var(--muted); padding:40px 16px; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
+    padding:12px 18px; border-radius:999px; font-size:14px; z-index:50; opacity:0; transition:opacity .2s; max-width:90%; text-align:center; }
+  .toast.show { opacity:1; }
+  .err { color:var(--red); font-size:14px; text-align:center; margin-top:12px; min-height:18px; }
+  .scroll { overflow-x:auto; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
+const root = document.getElementById("root");
+let TOKEN = localStorage.getItem("ff_admin_token") || "";
+let NAME = localStorage.getItem("ff_admin_name") || "";
+let TAB = "drivers";
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2400);
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); return isNaN(d)? esc(iso) : d.toLocaleString(); }
+
+async function api(path, opts={}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { "Content-Type":"application/json", ...(TOKEN?{Authorization:"Bearer "+TOKEN}:{}), ...(opts.headers||{}) },
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (res.status === 401 && TOKEN) { logout(); throw new Error("Session expired — please log in again"); }
+  if (!res.ok) throw new Error(data.error || ("Error " + res.status));
+  return data;
+}
+
+function logout(){ TOKEN=""; NAME=""; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); renderLogin(); }
+
+// ---- Login ----
+function renderLogin(){
+  root.innerHTML = `
+   <div class="login">
+     <h2>FitFuel Admin</h2>
+     <p class="tag">Driver & delivery management</p>
+     <label>Admin username</label>
+     <input id="u" autocapitalize="none" autocorrect="off" inputmode="text" />
+     <label>Password</label>
+     <input id="p" type="password" autocomplete="current-password" />
+     <button class="btn" id="go">Log in</button>
+     <div class="err" id="err"></div>
+   </div>`;
+  const go = document.getElementById("go");
+  const err = document.getElementById("err");
+  async function submit(){
+    err.textContent="";
+    const username=document.getElementById("u").value.trim();
+    const password=document.getElementById("p").value;
+    if(!username||!password){ err.textContent="Enter username and password"; return; }
+    go.disabled=true; go.textContent="Logging in…";
+    try{
+      const r = await api("/admin/login",{method:"POST",body:JSON.stringify({username,password})});
+      TOKEN=r.token; NAME=r.name||username;
+      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME);
+      renderApp();
+    }catch(e){ err.textContent=e.message; go.disabled=false; go.textContent="Log in"; }
+  }
+  go.onclick=submit;
+  document.getElementById("p").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+}
+
+// ---- App shell ----
+function renderApp(){
+  root.innerHTML = `
+   <header>
+     <div><h1>FitFuel Admin</h1><div class="sub">${esc(NAME)}</div></div>
+     <button id="logout">Log out</button>
+   </header>
+   <div class="wrap">
+     <div class="tabs">
+       <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
+       <button id="tab-activity" class="${TAB==="activity"?"on":""}">Activity</button>
+     </div>
+     <div id="panel"><div class="loading">Loading…</div></div>
+   </div>`;
+  document.getElementById("logout").onclick=logout;
+  document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
+  document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
+  if(TAB==="drivers") loadDrivers(); else loadActivity();
+}
+
+// ---- Drivers ----
+async function loadDrivers(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML = `
+    <div class="card">
+      <h3>Add driver</h3>
+      <p class="hint">Driver logs in on the delivery app with this username + PIN.</p>
+      <div class="row2">
+        <div><label>Username</label><input id="nu" autocapitalize="none" autocorrect="off" /></div>
+        <div><label>Full name</label><input id="nn" /></div>
+        <div><label>PIN / password</label><input id="np" autocomplete="off" /></div>
+      </div>
+      <button class="btn" id="add">Add driver</button>
+      <div class="err" id="adderr"></div>
+    </div>
+    <div class="card">
+      <h3>Drivers</h3>
+      <div class="scroll" id="dlist"><div class="loading">Loading…</div></div>
+    </div>`;
+
+  document.getElementById("add").onclick=addDriver;
+
+  try{
+    const {drivers}=await api("/admin/drivers");
+    const list=document.getElementById("dlist");
+    if(!drivers.length){ list.innerHTML='<div class="empty">No drivers yet — add one above.</div>'; return; }
+    list.innerHTML = `<table><thead><tr>
+        <th>Username</th><th>Name</th><th>Status</th><th>Added</th><th></th>
+      </tr></thead><tbody>${drivers.map(driverRow).join("")}</tbody></table>`;
+  }catch(e){ document.getElementById("dlist").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+function driverRow(d){
+  const u=esc(d.username);
+  return `<tr>
+    <td><strong>${u}</strong></td>
+    <td>${esc(d.name)}</td>
+    <td>${d.active?'<span class="pill on">active</span>':'<span class="pill off">disabled</span>'}</td>
+    <td>${esc((d.created_at||"").slice(0,10))}</td>
+    <td class="actions">
+      <button class="btn sm ghost" onclick="resetPin('${u}')">Reset PIN</button>
+      <button class="btn sm ${d.active?'danger':'ghost'}" onclick="toggleDriver('${u}',${d.active?'false':'true'})">${d.active?'Disable':'Enable'}</button>
+    </td>
+  </tr>`;
+}
+
+async function addDriver(){
+  const err=document.getElementById("adderr"); err.textContent="";
+  const username=document.getElementById("nu").value.trim();
+  const name=document.getElementById("nn").value.trim();
+  const pin=document.getElementById("np").value.trim();
+  if(!username||!name||!pin){ err.textContent="Username, name and PIN are all required"; return; }
+  const btn=document.getElementById("add"); btn.disabled=true; btn.textContent="Adding…";
+  try{
+    await api("/admin/drivers",{method:"POST",body:JSON.stringify({username,name,pin})});
+    toast("✓ Driver added");
+    loadDrivers();
+  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add driver"; }
+}
+
+async function resetPin(username){
+  const pin=prompt("New PIN / password for "+username+":");
+  if(pin==null) return;
+  if(!pin.trim()){ toast("PIN cannot be empty"); return; }
+  try{
+    await api("/admin/reset",{method:"POST",body:JSON.stringify({username,pin:pin.trim()})});
+    toast("✓ PIN reset for "+username);
+  }catch(e){ toast(e.message); }
+}
+
+async function toggleDriver(username,active){
+  const verb=active?"enable":"disable";
+  if(!confirm("Are you sure you want to "+verb+" "+username+"?")) return;
+  try{
+    await api("/admin/toggle",{method:"POST",body:JSON.stringify({username,active})});
+    toast("✓ "+username+" "+(active?"enabled":"disabled"));
+    loadDrivers();
+  }catch(e){ toast(e.message); }
+}
+
+// ---- Activity ----
+async function loadActivity(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML = `<div class="card">
+      <h3>Delivery activity</h3>
+      <p class="hint">Most recent 200 fulfilment / issue actions by drivers.</p>
+      <div class="scroll" id="alist"><div class="loading">Loading…</div></div>
+    </div>`;
+  try{
+    const {activity}=await api("/admin/activity");
+    const list=document.getElementById("alist");
+    if(!activity.length){ list.innerHTML='<div class="empty">No activity logged yet.</div>'; return; }
+    list.innerHTML = `<table><thead><tr>
+        <th>When</th><th>Driver</th><th>Order</th><th>Status</th><th>Note</th>
+      </tr></thead><tbody>${activity.map(activityRow).join("")}</tbody></table>`;
+  }catch(e){ document.getElementById("alist").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+function activityRow(a){
+  return `<tr>
+    <td>${fmtTime(a.created_at)}</td>
+    <td>${esc(a.driver_username||"—")}</td>
+    <td>${esc(a.order_name||a.order_gid||"—")}</td>
+    <td><span class="pill status">${esc((a.status||"").replace("_"," "))}</span></td>
+    <td>${esc(a.note||"")}</td>
+  </tr>`;
+}
+
+window.resetPin=resetPin; window.toggleDriver=toggleDriver;
+
+// ---- boot ----
+if(TOKEN) renderApp(); else renderLogin();
+</script>
+</body>
+</html>
