@@ -103,7 +103,7 @@ function renderLogin(){
      <h2>FitFuel Delivery</h2>
      <label>Username</label>
      <input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" inputmode="text" />
-     <label>PIN</label>
+     <label id="plabel">PIN</label>
      <input id="p" type="password" inputmode="numeric" autocomplete="current-password" />
      <button class="btn" id="go">Log in</button>
      <div class="err" id="err"></div>
@@ -114,7 +114,7 @@ function renderLogin(){
     err.textContent="";
     const username=document.getElementById("u").value.trim();
     const pin=document.getElementById("p").value.trim();
-    if(!username||!pin){ err.textContent="Enter username and PIN"; return; }
+    if(!username||!pin){ err.textContent="Enter username and "+document.getElementById("plabel").textContent; return; }
     go.disabled=true; go.textContent="Logging in…";
     try{
       const r = await api("/login",{method:"POST",body:JSON.stringify({username,pin})});
@@ -125,6 +125,21 @@ function renderLogin(){
   }
   go.onclick=submit;
   document.getElementById("p").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+
+  // Admins log in here too (with a password); drivers use a PIN. Flip the label
+  // to "Password" when the typed username is an admin.
+  const uEl=document.getElementById("u");
+  uEl.addEventListener("blur",async()=>{
+    const uname=uEl.value.trim();
+    const lbl=document.getElementById("plabel"), p=document.getElementById("p");
+    if(!uname){ lbl.textContent="PIN"; p.inputMode="numeric"; return; }
+    try{
+      const res=await fetch(API+"/account-type",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:uname})});
+      const d=await res.json().catch(()=>({}));
+      if(d.admin){ lbl.textContent="Password"; p.inputMode="text"; }
+      else { lbl.textContent="PIN"; p.inputMode="numeric"; }
+    }catch{}
+  });
 }
 
 // ---- Orders ----
