@@ -74,6 +74,30 @@
   .oissues .opt { display:flex; gap:8px; }
   .oissues .opt button { flex:1; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:14px; font-weight:600; }
   .oissues textarea { width:100%; margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:15px; min-height:54px; }
+  /* Fulfil panel (proof photo + COD cash) */
+  .ofulfil { margin-top:12px; display:none; }
+  .ofulfil.open { display:block; }
+  .ofulfil label.fl { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:6px 0; }
+  .ofulfil input[type=file] { width:100%; font-size:14px; }
+  .ofulfil .preview { display:none; width:100%; max-height:220px; object-fit:cover; border-radius:12px; margin-top:10px; border:1px solid var(--line); }
+  .ofulfil .cash { margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:10px 12px; }
+  .ofulfil .cash label { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; color:var(--green-d); }
+  .ofulfil .cash input[type=number] { width:100%; margin-top:8px; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; }
+  .ofulfil .confirm { margin-top:12px; }
+  .geo { font-size:12px; color:var(--muted); margin-top:8px; }
+  .geo.off { color:var(--amber); }
+  /* Summary */
+  .sumhead { display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .sumhead input[type=date] { padding:10px; border:1px solid var(--line); border-radius:10px; font-size:15px; }
+  .drvcard .drvtop { display:flex; justify-content:space-between; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .drvcard .drvtop .nm { font-size:16px; font-weight:800; }
+  .drvcard .stat { font-size:13px; color:var(--muted); }
+  .drvcard .stat b { color:#111827; }
+  .drvcard .cashbig { color:var(--green-d); font-weight:800; }
+  .deliv { display:flex; gap:10px; align-items:center; padding:10px 0; border-top:1px solid var(--line); }
+  .deliv img { width:54px; height:54px; object-fit:cover; border-radius:8px; border:1px solid var(--line); background:#f3f4f6; }
+  .deliv .meta { flex:1; font-size:13px; }
+  .deliv .meta .ttl { font-weight:600; }
   .fade { opacity:.4; pointer-events:none; }
 
   .empty, .loading { text-align:center; color:var(--muted); padding:40px 16px; }
@@ -162,6 +186,7 @@ function renderApp(){
        <button id="tab-orders" class="${TAB==="orders"?"on":""}">Orders</button>
        <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
        <button id="tab-admins" class="${TAB==="admins"?"on":""}">Admins</button>
+       <button id="tab-summary" class="${TAB==="summary"?"on":""}">Summary</button>
        <button id="tab-activity" class="${TAB==="activity"?"on":""}">Activity</button>
      </div>
      <div id="panel"><div class="loading">Loading…</div></div>
@@ -170,10 +195,13 @@ function renderApp(){
   document.getElementById("tab-orders").onclick=()=>{ TAB="orders"; renderApp(); };
   document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
   document.getElementById("tab-admins").onclick=()=>{ TAB="admins"; renderApp(); };
+  document.getElementById("tab-summary").onclick=()=>{ TAB="summary"; renderApp(); };
   document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
+  startGeo();
   if(TAB==="orders") loadOrders();
   else if(TAB==="drivers") loadDrivers();
   else if(TAB==="admins") loadAdmins();
+  else if(TAB==="summary") loadSummary();
   else loadActivity();
 }
 
@@ -411,8 +439,19 @@ function ocard(o){
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     <div class="oactions">
-      <button class="btn" onclick="ofulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
+    </div>
+    <div class="ofulfil" id="offl-${esc(o.id)}">
+      <label class="fl">Proof of delivery photo (required)</label>
+      <input type="file" accept="image/*" capture="environment" id="ophoto-${esc(o.id)}" onchange="onOPhoto('${esc(o.id)}')" />
+      <img class="preview" id="oprev-${esc(o.id)}" alt="" />
+      ${o.cod ? `<div class="cash">
+        <label><input type="checkbox" id="ocash-${esc(o.id)}" checked /> Cash received (COD)</label>
+        <input type="number" inputmode="decimal" step="0.01" id="ocamt-${esc(o.id)}" value="${esc(o.amount)}" />
+      </div>` : ""}
+      <div class="geo" id="ogeo-${esc(o.id)}"></div>
+      <button class="btn confirm" onclick="confirmOFulfill('${esc(o.id)}')">Confirm delivery</button>
     </div>
     <div class="oissues" id="oiss-${esc(o.id)}">
       <div class="opt">
@@ -427,12 +466,67 @@ function ocard(o){
 
 function otoggleIssue(id){ document.getElementById("oiss-"+id).classList.toggle("open"); }
 
-async function ofulfill(id){
-  if(!confirm("Mark this order as delivered & fulfilled?")) return;
+// ---- Geolocation + proof-photo fulfil (mirrors the driver app) ----
+let CURRENT_POS=null;
+function startGeo(){
+  if(!("geolocation" in navigator)) return;
+  navigator.geolocation.watchPosition(
+    p=>{ CURRENT_POS={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}; },
+    ()=>{},
+    { enableHighAccuracy:true, maximumAge:30000, timeout:20000 }
+  );
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) startGeo(); });
+
+const OPHOTOS={};
+function downscale(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>=h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(c.toDataURL("image/jpeg",quality));
+    };
+    img.onerror=reject;
+    img.src=URL.createObjectURL(file);
+  });
+}
+function ogeoHint(el){
+  if(!el) return;
+  if(CURRENT_POS){ el.className="geo"; el.textContent="📍 Location ready (±"+Math.round(CURRENT_POS.acc||0)+"m)"; }
+  else { el.className="geo off"; el.textContent="📍 Location unavailable — will record without GPS"; }
+}
+function otoggleFulfill(id){
+  const el=document.getElementById("offl-"+id);
+  el.classList.toggle("open");
+  if(el.classList.contains("open")){ startGeo(); ogeoHint(document.getElementById("ogeo-"+id)); }
+}
+async function onOPhoto(id){
+  const f=(document.getElementById("ophoto-"+id).files||[])[0];
+  if(!f) return;
+  try{
+    const dataUrl=await downscale(f,1280,0.6);
+    OPHOTOS[id]=dataUrl;
+    const prev=document.getElementById("oprev-"+id); prev.src=dataUrl; prev.style.display="block";
+  }catch{ toast("Couldn't read that photo"); }
+}
+async function confirmOFulfill(id){
+  if(!OPHOTOS[id]){ toast("Please add a proof photo first"); return; }
+  const codCheck=document.getElementById("ocash-"+id);
+  const cashCollected=codCheck?codCheck.checked:false;
+  const amtEl=document.getElementById("ocamt-"+id);
+  const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const el=document.getElementById("ocard-"+id); el.classList.add("fade");
   try{
-    await api("/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    await api("/fulfill",{method:"POST",body:JSON.stringify({
+      orderGid:id, photo:OPHOTOS[id], cashCollected, cashAmount,
+      lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
+    })});
     toast("✓ Fulfilled");
+    delete OPHOTOS[id];
     el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
   }catch(e){ el.classList.remove("fade"); toast(e.message); }
 }
@@ -447,7 +541,59 @@ async function oreportIssue(id,status){
   }catch(e){ el.classList.remove("fade"); toast(e.message); }
 }
 
-window.loadOrderList=loadOrderList; window.ofulfill=ofulfill; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
+window.loadOrderList=loadOrderList; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
+window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill;
+
+// ---- Summary (end-of-day, per driver) ----
+function todayDubai(){ return new Date(Date.now()+4*3600*1000).toISOString().slice(0,10); }
+let SUMMARY_DATE = todayDubai();
+
+async function loadSummary(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML=`
+    <div class="sumhead">
+      <span class="hint">Day (Asia/Dubai):</span>
+      <input type="date" id="sumdate" value="${esc(SUMMARY_DATE)}" max="${esc(todayDubai())}" />
+    </div>
+    <div id="sumbody"><div class="loading">Loading…</div></div>`;
+  document.getElementById("sumdate").onchange=(e)=>{ SUMMARY_DATE=e.target.value||todayDubai(); loadSummary(); };
+  try{
+    const {summary}=await api("/admin/summary?date="+encodeURIComponent(SUMMARY_DATE));
+    const body=document.getElementById("sumbody");
+    if(!summary.length){ body.innerHTML='<div class="empty">No deliveries on this date.</div>'; return; }
+    body.innerHTML=summary.map(drvCard).join("");
+  }catch(e){ document.getElementById("sumbody").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+function fmtMoney(n){ return (Math.round(Number(n||0)*100)/100).toFixed(2); }
+
+function drvCard(d){
+  return `<div class="card drvcard">
+    <div class="drvtop">
+      <div class="nm">${esc(d.driver)}</div>
+      <div class="stat"><b>${esc(d.completed)}</b> delivered · cash collected <span class="cashbig">${esc(fmtMoney(d.cashTotal))}</span></div>
+    </div>
+    <div>${d.items.map(delivRow).join("")}</div>
+  </div>`;
+}
+
+function delivRow(it){
+  const geo=(it.lat!=null&&it.lng!=null)
+    ? `<a href="https://maps.google.com/?q=${esc(it.lat)},${esc(it.lng)}" target="_blank">📍 GPS</a>`
+    : '<span class="hint">no GPS</span>';
+  const cash=it.cash_collected?` · 💵 ${esc(fmtMoney(it.cash_amount))}`:"";
+  const img=it.photoUrl
+    ? `<a href="${esc(it.photoUrl)}" target="_blank"><img src="${esc(it.photoUrl)}" alt="proof" /></a>`
+    : `<img alt="no photo" />`;
+  return `<div class="deliv">
+    ${img}
+    <div class="meta">
+      <div class="ttl">${esc(it.order_name||"—")} <span class="pill status">${esc((it.status||"").replace("_"," "))}</span></div>
+      <div class="hint">${esc(fmtTime(it.created_at))} · ${geo}${cash}</div>
+      ${it.note?`<div class="hint">📝 ${esc(it.note)}</div>`:""}
+    </div>
+  </div>`;
+}
 
 // ---- boot ----
 if(TOKEN) renderApp(); else renderLogin();

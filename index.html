@@ -56,6 +56,19 @@
   .issues .opt button { flex:1; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:14px; font-weight:600; }
   .issues textarea { width:100%; margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:15px; min-height:54px; }
 
+  /* Fulfil panel (proof photo + COD cash) */
+  .fulfil { margin-top:12px; display:none; }
+  .fulfil.open { display:block; }
+  .fulfil label.fl { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:6px 0; }
+  .fulfil input[type=file] { width:100%; font-size:14px; }
+  .fulfil .preview { display:none; width:100%; max-height:220px; object-fit:cover; border-radius:12px; margin-top:10px; border:1px solid var(--line); }
+  .fulfil .cash { margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:10px 12px; }
+  .fulfil .cash label { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; color:var(--green-d); }
+  .fulfil .cash input[type=number] { width:100%; margin-top:8px; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; }
+  .fulfil .confirm { margin-top:12px; }
+  .geo { font-size:12px; color:var(--muted); margin-top:8px; }
+  .geo.off { color:var(--amber); }
+
   .empty, .loading { text-align:center; color:var(--muted); padding:48px 16px; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
     padding:12px 18px; border-radius:999px; font-size:14px; z-index:50; opacity:0; transition:opacity .2s; }
@@ -151,6 +164,7 @@ async function renderOrders(){
    </header>
    <div class="wrap"><div class="loading" id="list">Loading orders…</div></div>`;
   document.getElementById("logout").onclick=logout;
+  startGeo();
   await loadList();
 }
 
@@ -174,8 +188,19 @@ function card(o){
     ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
     <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     <div class="actions">
-      <button class="btn" onclick="fulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
+    </div>
+    <div class="fulfil" id="ffl-${esc(o.id)}">
+      <label class="fl">Proof of delivery photo (required)</label>
+      <input type="file" accept="image/*" capture="environment" id="photo-${esc(o.id)}" onchange="onPhoto('${esc(o.id)}')" />
+      <img class="preview" id="prev-${esc(o.id)}" alt="" />
+      ${o.cod ? `<div class="cash">
+        <label><input type="checkbox" id="cash-${esc(o.id)}" checked /> Cash received (COD)</label>
+        <input type="number" inputmode="decimal" step="0.01" id="camt-${esc(o.id)}" value="${esc(o.amount)}" />
+      </div>` : ""}
+      <div class="geo" id="geo-${esc(o.id)}"></div>
+      <button class="btn confirm" onclick="confirmFulfill('${esc(o.id)}')">Confirm delivery</button>
     </div>
     <div class="issues" id="iss-${esc(o.id)}">
       <div class="opt">
@@ -190,12 +215,72 @@ function card(o){
 
 function toggleIssue(id){ document.getElementById("iss-"+id).classList.toggle("open"); }
 
-async function fulfill(id){
-  if(!confirm("Mark this order as delivered & fulfilled?")) return;
+// ---- Geolocation: ask once, keep the latest fix while the app is active ----
+let CURRENT_POS=null;
+function startGeo(){
+  if(!("geolocation" in navigator)) return;
+  navigator.geolocation.watchPosition(
+    p=>{ CURRENT_POS={lat:p.coords.latitude,lng:p.coords.longitude,acc:p.coords.accuracy}; },
+    ()=>{},
+    { enableHighAccuracy:true, maximumAge:30000, timeout:20000 }
+  );
+}
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden) startGeo(); });
+
+// ---- Fulfil: proof photo (required) + COD cash + GPS ----
+const PHOTOS={};
+
+function downscale(file,maxDim,quality){
+  return new Promise((resolve,reject)=>{
+    const img=new Image();
+    img.onload=()=>{
+      let w=img.width,h=img.height;
+      if(w>=h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+      else if(h>w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+      const c=document.createElement("canvas"); c.width=w; c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      resolve(c.toDataURL("image/jpeg",quality));
+    };
+    img.onerror=reject;
+    img.src=URL.createObjectURL(file);
+  });
+}
+
+function updateGeoHint(el){
+  if(CURRENT_POS){ el.className="geo"; el.textContent="📍 Location ready (±"+Math.round(CURRENT_POS.acc||0)+"m)"; }
+  else { el.className="geo off"; el.textContent="📍 Location unavailable — will record without GPS"; }
+}
+
+function toggleFulfill(id){
+  const el=document.getElementById("ffl-"+id);
+  el.classList.toggle("open");
+  if(el.classList.contains("open")){ startGeo(); updateGeoHint(document.getElementById("geo-"+id)); }
+}
+
+async function onPhoto(id){
+  const f=(document.getElementById("photo-"+id).files||[])[0];
+  if(!f) return;
+  try{
+    const dataUrl=await downscale(f,1280,0.6);
+    PHOTOS[id]=dataUrl;
+    const prev=document.getElementById("prev-"+id); prev.src=dataUrl; prev.style.display="block";
+  }catch{ toast("Couldn't read that photo"); }
+}
+
+async function confirmFulfill(id){
+  if(!PHOTOS[id]){ toast("Please add a proof photo first"); return; }
+  const codCheck=document.getElementById("cash-"+id);
+  const cashCollected=codCheck?codCheck.checked:false;
+  const amtEl=document.getElementById("camt-"+id);
+  const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
-    await api("/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    await api("/fulfill",{method:"POST",body:JSON.stringify({
+      orderGid:id, photo:PHOTOS[id], cashCollected, cashAmount,
+      lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
+    })});
     toast("✓ Fulfilled");
+    delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
   }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
@@ -212,7 +297,8 @@ async function reportIssue(id,status){
   }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
 }
 
-window.loadList=loadList; window.fulfill=fulfill; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
+window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
+window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill;
 
 // ---- boot ----
 if("serviceWorker" in navigator){
