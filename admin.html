@@ -55,6 +55,7 @@
   .pill.on { background:#dcfce7; color:var(--green-d); }
   .pill.off { background:#fee2e2; color:var(--red); }
   .pill.status { background:#eef2ff; color:#3730a3; }
+  .pill.master { background:#fef3c7; color:#92400e; }
 
   .empty, .loading { text-align:center; color:var(--muted); padding:40px 16px; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
@@ -73,6 +74,7 @@ const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
+let ME = localStorage.getItem("ff_admin_user") || "";
 let TAB = "drivers";
 
 function toast(msg) {
@@ -95,7 +97,7 @@ async function api(path, opts={}) {
   return data;
 }
 
-function logout(){ TOKEN=""; NAME=""; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); renderLogin(); }
+function logout(){ TOKEN=""; NAME=""; ME=""; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); localStorage.removeItem("ff_admin_user"); renderLogin(); }
 
 // ---- Login ----
 function renderLogin(){
@@ -120,8 +122,8 @@ function renderLogin(){
     go.disabled=true; go.textContent="Logging in…";
     try{
       const r = await api("/admin/login",{method:"POST",body:JSON.stringify({username,password})});
-      TOKEN=r.token; NAME=r.name||username;
-      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME);
+      TOKEN=r.token; NAME=r.name||username; ME=(r.username||username).toLowerCase();
+      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME); localStorage.setItem("ff_admin_user",ME);
       renderApp();
     }catch(e){ err.textContent=e.message; go.disabled=false; go.textContent="Log in"; }
   }
@@ -139,14 +141,16 @@ function renderApp(){
    <div class="wrap">
      <div class="tabs">
        <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
+       <button id="tab-admins" class="${TAB==="admins"?"on":""}">Admins</button>
        <button id="tab-activity" class="${TAB==="activity"?"on":""}">Activity</button>
      </div>
      <div id="panel"><div class="loading">Loading…</div></div>
    </div>`;
   document.getElementById("logout").onclick=logout;
   document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
+  document.getElementById("tab-admins").onclick=()=>{ TAB="admins"; renderApp(); };
   document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
-  if(TAB==="drivers") loadDrivers(); else loadActivity();
+  if(TAB==="drivers") loadDrivers(); else if(TAB==="admins") loadAdmins(); else loadActivity();
 }
 
 // ---- Drivers ----
@@ -257,7 +261,105 @@ function activityRow(a){
   </tr>`;
 }
 
+// ---- Admins (manage other admin users) ----
+async function loadAdmins(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML = `
+    <div class="card">
+      <h3>Add admin</h3>
+      <p class="hint">New admins have the same rights as you. The master account can't be disabled or deleted.</p>
+      <div class="row2">
+        <div><label>Username</label><input id="au" autocapitalize="none" autocorrect="off" /></div>
+        <div><label>Full name</label><input id="an" /></div>
+        <div><label>Password</label><input id="ap" autocomplete="off" /></div>
+      </div>
+      <button class="btn" id="addadmin">Add admin</button>
+      <div class="err" id="aerr"></div>
+    </div>
+    <div class="card">
+      <h3>Admins</h3>
+      <div class="scroll" id="alist2"><div class="loading">Loading…</div></div>
+    </div>`;
+
+  document.getElementById("addadmin").onclick=addAdmin;
+
+  try{
+    const {admins}=await api("/admin/admins");
+    const list=document.getElementById("alist2");
+    list.innerHTML = `<table><thead><tr>
+        <th>Username</th><th>Name</th><th>Status</th><th>Added</th><th></th>
+      </tr></thead><tbody>${admins.map(adminRow).join("")}</tbody></table>`;
+  }catch(e){ document.getElementById("alist2").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+function adminRow(a){
+  const u=esc(a.username);
+  const isMe = (a.username||"").toLowerCase()===ME;
+  const badges = (a.is_master?'<span class="pill master">master</span> ':'') + (isMe?'<span class="pill status">you</span>':'');
+  // Master row: only the master (you) can reset its password; never disable/delete.
+  // Your own row: you can reset your password, but not disable/delete yourself.
+  const canReset  = a.is_master ? isMe : true;
+  const canToggle = !a.is_master && !isMe;
+  const canDelete = !a.is_master && !isMe;
+  const btns = [
+    canReset  ? `<button class="btn sm ghost" onclick="resetAdmin('${u}')">Reset password</button>` : "",
+    canToggle ? `<button class="btn sm ${a.active?'danger':'ghost'}" onclick="toggleAdmin('${u}',${a.active?'false':'true'})">${a.active?'Disable':'Enable'}</button>` : "",
+    canDelete ? `<button class="btn sm danger" onclick="deleteAdmin('${u}')">Delete</button>` : "",
+  ].join("");
+  return `<tr>
+    <td><strong>${u}</strong> ${badges}</td>
+    <td>${esc(a.name)}</td>
+    <td>${a.active?'<span class="pill on">active</span>':'<span class="pill off">disabled</span>'}</td>
+    <td>${esc((a.created_at||"").slice(0,10))}</td>
+    <td class="actions">${btns||'<span class="hint">—</span>'}</td>
+  </tr>`;
+}
+
+async function addAdmin(){
+  const err=document.getElementById("aerr"); err.textContent="";
+  const username=document.getElementById("au").value.trim();
+  const name=document.getElementById("an").value.trim();
+  const password=document.getElementById("ap").value;
+  if(!username||!name||!password){ err.textContent="Username, name and password are all required"; return; }
+  const btn=document.getElementById("addadmin"); btn.disabled=true; btn.textContent="Adding…";
+  try{
+    await api("/admin/admins",{method:"POST",body:JSON.stringify({username,name,password})});
+    toast("✓ Admin added");
+    loadAdmins();
+  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add admin"; }
+}
+
+async function resetAdmin(username){
+  const password=prompt("New password for admin "+username+":");
+  if(password==null) return;
+  if(!password.trim()){ toast("Password cannot be empty"); return; }
+  try{
+    await api("/admin/admin-reset",{method:"POST",body:JSON.stringify({username,password:password.trim()})});
+    toast("✓ Password reset for "+username);
+  }catch(e){ toast(e.message); }
+}
+
+async function toggleAdmin(username,active){
+  const verb=active?"enable":"disable";
+  if(!confirm("Are you sure you want to "+verb+" admin "+username+"?")) return;
+  try{
+    await api("/admin/admin-toggle",{method:"POST",body:JSON.stringify({username,active})});
+    toast("✓ "+username+" "+(active?"enabled":"disabled"));
+    loadAdmins();
+  }catch(e){ toast(e.message); }
+}
+
+async function deleteAdmin(username){
+  if(!confirm("Delete admin "+username+"? This cannot be undone.")) return;
+  try{
+    await api("/admin/admin-delete",{method:"POST",body:JSON.stringify({username})});
+    toast("✓ Deleted "+username);
+    loadAdmins();
+  }catch(e){ toast(e.message); }
+}
+
 window.resetPin=resetPin; window.toggleDriver=toggleDriver;
+window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin;
 
 // ---- boot ----
 if(TOKEN) renderApp(); else renderLogin();
