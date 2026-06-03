@@ -57,6 +57,25 @@
   .pill.status { background:#eef2ff; color:#3730a3; }
   .pill.master { background:#fef3c7; color:#92400e; }
 
+  /* Order cards (mirror the driver app) */
+  .ocard { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .ocard .otop { display:flex; justify-content:space-between; align-items:baseline; }
+  .ocard .onum { font-size:18px; font-weight:800; }
+  .ocard .ototal { font-size:14px; color:var(--muted); }
+  .ocard .owho { font-size:15px; font-weight:600; margin-top:6px; }
+  .ocard a.orow { display:flex; gap:8px; align-items:center; text-decoration:none; color:#1d4ed8; font-size:15px; margin-top:8px; word-break:break-word; }
+  .ocard .oitems { margin:12px 0 0; padding:12px 0 0; border-top:1px dashed var(--line); font-size:14px; color:#374151; }
+  .ocard .oitems div { display:flex; justify-content:space-between; padding:2px 0; }
+  .ocard .onote { margin-top:10px; font-size:13px; color:var(--amber); background:#fffbeb; padding:8px 10px; border-radius:8px; }
+  .oactions { display:flex; gap:10px; margin-top:14px; }
+  .oactions .btn { margin-top:0; flex:1; }
+  .oissues { margin-top:12px; display:none; }
+  .oissues.open { display:block; }
+  .oissues .opt { display:flex; gap:8px; }
+  .oissues .opt button { flex:1; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:14px; font-weight:600; }
+  .oissues textarea { width:100%; margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:15px; min-height:54px; }
+  .fade { opacity:.4; pointer-events:none; }
+
   .empty, .loading { text-align:center; color:var(--muted); padding:40px 16px; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
     padding:12px 18px; border-radius:999px; font-size:14px; z-index:50; opacity:0; transition:opacity .2s; max-width:90%; text-align:center; }
@@ -75,7 +94,7 @@ const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
 let ME = localStorage.getItem("ff_admin_user") || "";
-let TAB = "drivers";
+let TAB = "orders";
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -140,6 +159,7 @@ function renderApp(){
    </header>
    <div class="wrap">
      <div class="tabs">
+       <button id="tab-orders" class="${TAB==="orders"?"on":""}">Orders</button>
        <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
        <button id="tab-admins" class="${TAB==="admins"?"on":""}">Admins</button>
        <button id="tab-activity" class="${TAB==="activity"?"on":""}">Activity</button>
@@ -147,10 +167,14 @@ function renderApp(){
      <div id="panel"><div class="loading">Loading…</div></div>
    </div>`;
   document.getElementById("logout").onclick=logout;
+  document.getElementById("tab-orders").onclick=()=>{ TAB="orders"; renderApp(); };
   document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
   document.getElementById("tab-admins").onclick=()=>{ TAB="admins"; renderApp(); };
   document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
-  if(TAB==="drivers") loadDrivers(); else if(TAB==="admins") loadAdmins(); else loadActivity();
+  if(TAB==="orders") loadOrders();
+  else if(TAB==="drivers") loadDrivers();
+  else if(TAB==="admins") loadAdmins();
+  else loadActivity();
 }
 
 // ---- Drivers ----
@@ -360,6 +384,70 @@ async function deleteAdmin(username){
 
 window.resetPin=resetPin; window.toggleDriver=toggleDriver;
 window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin;
+
+// ---- Orders (same view drivers get: see / fulfill / report issues) ----
+async function loadOrders(){
+  document.getElementById("panel").innerHTML='<div class="loading" id="olist">Loading orders…</div>';
+  await loadOrderList();
+}
+
+async function loadOrderList(){
+  const list=document.getElementById("olist");
+  try{
+    const {orders}=await api("/orders");
+    if(!orders.length){ list.outerHTML='<div class="empty" id="olist">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Refresh</button></div>'; return; }
+    list.outerHTML='<div id="olist">'+orders.map(ocard).join("")+'<button class="btn ghost" onclick="loadOrderList()">Refresh</button></div>';
+  }catch(e){ list.outerHTML='<div class="empty" id="olist">'+esc(e.message)+'<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Retry</button></div>'; }
+}
+
+function ocard(o){
+  const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
+  return `
+  <div class="ocard" id="ocard-${esc(o.id)}">
+    <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
+    <div class="owho">${esc(o.customerName)}</div>
+    ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
+    ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
+    ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
+    <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    <div class="oactions">
+      <button class="btn" onclick="ofulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
+    </div>
+    <div class="oissues" id="oiss-${esc(o.id)}">
+      <div class="opt">
+        <button onclick="oreportIssue('${esc(o.id)}','not_home')">Not home</button>
+        <button onclick="oreportIssue('${esc(o.id)}','rescheduled')">Reschedule</button>
+        <button onclick="oreportIssue('${esc(o.id)}','refused')">Refused</button>
+      </div>
+      <textarea id="onote-${esc(o.id)}" placeholder="Optional note (e.g. left with neighbour)"></textarea>
+    </div>
+  </div>`;
+}
+
+function otoggleIssue(id){ document.getElementById("oiss-"+id).classList.toggle("open"); }
+
+async function ofulfill(id){
+  if(!confirm("Mark this order as delivered & fulfilled?")) return;
+  const el=document.getElementById("ocard-"+id); el.classList.add("fade");
+  try{
+    await api("/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    toast("✓ Fulfilled");
+    el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
+  }catch(e){ el.classList.remove("fade"); toast(e.message); }
+}
+
+async function oreportIssue(id,status){
+  const note=(document.getElementById("onote-"+id)||{}).value||"";
+  const el=document.getElementById("ocard-"+id); el.classList.add("fade");
+  try{
+    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note})});
+    toast("Saved: "+status.replace("_"," "));
+    el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
+  }catch(e){ el.classList.remove("fade"); toast(e.message); }
+}
+
+window.loadOrderList=loadOrderList; window.ofulfill=ofulfill; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
 
 // ---- boot ----
 if(TOKEN) renderApp(); else renderLogin();
