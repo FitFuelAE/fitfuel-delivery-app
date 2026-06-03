@@ -1,0 +1,14 @@
+{
+  "name": "FitFuel Delivery",
+  "short_name": "Delivery",
+  "description": "Mark FitFuel orders delivered",
+  "start_url": ".",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#16a34a",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

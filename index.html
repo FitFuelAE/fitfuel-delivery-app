@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="theme-color" content="#16a34a" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Delivery" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icon.svg" />
+<title>FitFuel Delivery</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root { --green:#16a34a; --green-d:#15803d; --bg:#f5f6f8; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --red:#dc2626; --amber:#d97706; }
+  html,body { margin:0; padding:0; background:var(--bg); color:#111827;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  header { position:sticky; top:0; z-index:10; background:var(--green); color:#fff;
+    padding:calc(env(safe-area-inset-top) + 14px) 16px 14px; display:flex; align-items:center; justify-content:space-between; }
+  header h1 { font-size:18px; margin:0; font-weight:700; }
+  header .sub { font-size:12px; opacity:.85; margin-top:2px; }
+  header button { background:rgba(255,255,255,.2); color:#fff; border:none; border-radius:8px;
+    padding:8px 12px; font-size:14px; font-weight:600; }
+  .wrap { padding:16px; max-width:640px; margin:0 auto; }
+
+  /* Login */
+  .login { min-height:100dvh; display:flex; flex-direction:column; justify-content:center; padding:24px; max-width:420px; margin:0 auto; }
+  .logo { width:64px; height:64px; margin:0 auto 16px; }
+  .login h2 { text-align:center; margin:0 0 24px; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:14px 0 6px; }
+  input { width:100%; padding:14px; font-size:17px; border:1px solid var(--line); border-radius:12px; background:#fff; }
+  input:focus { outline:none; border-color:var(--green); }
+  .btn { width:100%; padding:16px; font-size:17px; font-weight:700; border:none; border-radius:12px;
+    background:var(--green); color:#fff; margin-top:20px; }
+  .btn:active { background:var(--green-d); }
+  .btn[disabled] { opacity:.6; }
+
+  /* Cards */
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
+  .card .top { display:flex; justify-content:space-between; align-items:baseline; }
+  .card .num { font-size:18px; font-weight:800; }
+  .card .total { font-size:14px; color:var(--muted); }
+  .card .who { font-size:15px; font-weight:600; margin-top:6px; }
+  .card a.row { display:flex; gap:8px; align-items:center; text-decoration:none; color:#1d4ed8;
+    font-size:15px; margin-top:8px; word-break:break-word; }
+  .card .items { margin:12px 0 0; padding:12px 0 0; border-top:1px dashed var(--line); font-size:14px; color:#374151; }
+  .card .items div { display:flex; justify-content:space-between; padding:2px 0; }
+  .card .note { margin-top:10px; font-size:13px; color:var(--amber); background:#fffbeb; padding:8px 10px; border-radius:8px; }
+  .actions { display:flex; gap:10px; margin-top:14px; }
+  .actions .btn { margin-top:0; flex:1; }
+  .btn.ghost { background:#fff; color:#374151; border:1px solid var(--line); }
+  .issues { margin-top:12px; display:none; }
+  .issues.open { display:block; }
+  .issues .opt { display:flex; gap:8px; }
+  .issues .opt button { flex:1; padding:12px; border-radius:10px; border:1px solid var(--line); background:#fff; font-size:14px; font-weight:600; }
+  .issues textarea { width:100%; margin-top:8px; border:1px solid var(--line); border-radius:10px; padding:10px; font-size:15px; min-height:54px; }
+
+  .empty, .loading { text-align:center; color:var(--muted); padding:48px 16px; }
+  .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
+    padding:12px 18px; border-radius:999px; font-size:14px; z-index:50; opacity:0; transition:opacity .2s; }
+  .toast.show { opacity:1; }
+  .err { color:var(--red); font-size:14px; text-align:center; margin-top:12px; min-height:18px; }
+  .fade { opacity:.4; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="toast" class="toast"></div>
+
+<script>
+const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
+const root = document.getElementById("root");
+let TOKEN = localStorage.getItem("ff_token") || "";
+let NAME = localStorage.getItem("ff_name") || "";
+
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+async function api(path, opts={}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { "Content-Type":"application/json", ...(TOKEN?{Authorization:"Bearer "+TOKEN}:{}) , ...(opts.headers||{}) },
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (res.status === 401 && TOKEN) { logout(); throw new Error("Session expired — please log in again"); }
+  if (!res.ok) throw new Error(data.error || ("Error " + res.status));
+  return data;
+}
+
+function logout(){ TOKEN=""; NAME=""; localStorage.removeItem("ff_token"); localStorage.removeItem("ff_name"); renderLogin(); }
+
+// ---- Login ----
+function renderLogin(){
+  root.innerHTML = `
+   <div class="login">
+     <img class="logo" src="./icon.svg" alt="" />
+     <h2>FitFuel Delivery</h2>
+     <label>Username</label>
+     <input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" inputmode="text" />
+     <label>PIN</label>
+     <input id="p" type="password" inputmode="numeric" autocomplete="current-password" />
+     <button class="btn" id="go">Log in</button>
+     <div class="err" id="err"></div>
+   </div>`;
+  const go = document.getElementById("go");
+  const err = document.getElementById("err");
+  async function submit(){
+    err.textContent="";
+    const username=document.getElementById("u").value.trim();
+    const pin=document.getElementById("p").value.trim();
+    if(!username||!pin){ err.textContent="Enter username and PIN"; return; }
+    go.disabled=true; go.textContent="Logging in…";
+    try{
+      const r = await api("/login",{method:"POST",body:JSON.stringify({username,pin})});
+      TOKEN=r.token; NAME=r.name||username;
+      localStorage.setItem("ff_token",TOKEN); localStorage.setItem("ff_name",NAME);
+      renderOrders();
+    }catch(e){ err.textContent=e.message; go.disabled=false; go.textContent="Log in"; }
+  }
+  go.onclick=submit;
+  document.getElementById("p").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+}
+
+// ---- Orders ----
+async function renderOrders(){
+  root.innerHTML = `
+   <header>
+     <div><h1>Deliveries</h1><div class="sub">${esc(NAME)}</div></div>
+     <button id="logout">Log out</button>
+   </header>
+   <div class="wrap"><div class="loading" id="list">Loading orders…</div></div>`;
+  document.getElementById("logout").onclick=logout;
+  await loadList();
+}
+
+async function loadList(){
+  const list=document.getElementById("list");
+  try{
+    const {orders}=await api("/orders");
+    if(!orders.length){ list.outerHTML='<div class="empty" id="list">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Refresh</button></div>'; return; }
+    list.outerHTML = '<div id="list">' + orders.map(card).join("") + '<button class="btn ghost" onclick="loadList()">Refresh</button></div>';
+  }catch(e){ list.outerHTML='<div class="empty" id="list">'+esc(e.message)+'<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Retry</button></div>'; }
+}
+
+function card(o){
+  const mapsHref = o.address ? "https://maps.google.com/?q="+encodeURIComponent(o.address) : "";
+  return `
+  <div class="card" id="card-${esc(o.id)}">
+    <div class="top"><div class="num">${esc(o.name)}</div><div class="total">${esc(o.total)}</div></div>
+    <div class="who">${esc(o.customerName)}</div>
+    ${o.address? `<a class="row" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
+    ${o.phone? `<a class="row" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
+    ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
+    <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    <div class="actions">
+      <button class="btn" onclick="fulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
+    </div>
+    <div class="issues" id="iss-${esc(o.id)}">
+      <div class="opt">
+        <button onclick="reportIssue('${esc(o.id)}','not_home')">Not home</button>
+        <button onclick="reportIssue('${esc(o.id)}','rescheduled')">Reschedule</button>
+        <button onclick="reportIssue('${esc(o.id)}','refused')">Refused</button>
+      </div>
+      <textarea id="note-${esc(o.id)}" placeholder="Optional note (e.g. left with neighbour)"></textarea>
+    </div>
+  </div>`;
+}
+
+function toggleIssue(id){ document.getElementById("iss-"+id).classList.toggle("open"); }
+
+async function fulfill(id){
+  if(!confirm("Mark this order as delivered & fulfilled?")) return;
+  const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
+  try{
+    await api("/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    toast("✓ Fulfilled");
+    cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
+    setTimeout(()=>cardEl.remove(),300);
+  }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
+}
+
+async function reportIssue(id,status){
+  const note=(document.getElementById("note-"+id)||{}).value||"";
+  const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
+  try{
+    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note})});
+    toast("Saved: "+status.replace("_"," "));
+    cardEl.style.transition="opacity .3s"; cardEl.style.opacity="0";
+    setTimeout(()=>cardEl.remove(),300);
+  }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
+}
+
+window.loadList=loadList; window.fulfill=fulfill; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
+
+// ---- boot ----
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("./sw.js").catch(()=>{});
+}
+if(TOKEN) renderOrders(); else renderLogin();
+</script>
+</body>
+</html>
