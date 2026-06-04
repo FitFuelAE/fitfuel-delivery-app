@@ -5,6 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#16a34a" />
 <meta name="robots" content="noindex" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="FF Admin" />
+<link rel="manifest" href="./admin.webmanifest" />
+<link rel="apple-touch-icon" href="./admin-icon.svg" />
 <title>FitFuel Delivery — Admin</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -36,9 +41,9 @@
   .btn.sm { width:auto; padding:8px 12px; font-size:13px; margin-top:0; border-radius:9px; }
 
   /* Tabs */
-  .tabs { display:flex; gap:8px; margin:0 0 16px; }
-  .tabs button { flex:1; padding:12px; border:1px solid var(--line); background:#fff; border-radius:10px;
-    font-size:15px; font-weight:600; color:#374151; }
+  .tabs { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 16px; }
+  .tabs button { flex:1 1 auto; min-width:84px; padding:10px 8px; border:1px solid var(--line); background:#fff; border-radius:10px;
+    font-size:14px; font-weight:600; color:#374151; white-space:nowrap; }
   .tabs button.on { background:var(--green); color:#fff; border-color:var(--green); }
 
   .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
@@ -184,6 +189,7 @@ function renderApp(){
    <div class="wrap">
      <div class="tabs">
        <button id="tab-orders" class="${TAB==="orders"?"on":""}">Orders</button>
+       <button id="tab-allocate" class="${TAB==="allocate"?"on":""}">Allocate</button>
        <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
        <button id="tab-admins" class="${TAB==="admins"?"on":""}">Admins</button>
        <button id="tab-summary" class="${TAB==="summary"?"on":""}">Summary</button>
@@ -193,12 +199,14 @@ function renderApp(){
    </div>`;
   document.getElementById("logout").onclick=logout;
   document.getElementById("tab-orders").onclick=()=>{ TAB="orders"; renderApp(); };
+  document.getElementById("tab-allocate").onclick=()=>{ TAB="allocate"; renderApp(); };
   document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
   document.getElementById("tab-admins").onclick=()=>{ TAB="admins"; renderApp(); };
   document.getElementById("tab-summary").onclick=()=>{ TAB="summary"; renderApp(); };
   document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
   startGeo();
   if(TAB==="orders") loadOrders();
+  else if(TAB==="allocate") loadAllocate();
   else if(TAB==="drivers") loadDrivers();
   else if(TAB==="admins") loadAdmins();
   else if(TAB==="summary") loadSummary();
@@ -597,7 +605,42 @@ function delivRow(it){
   </div>`;
 }
 
+// ---- Allocate (assign orders to drivers) ----
+async function loadAllocate(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
+  try{
+    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders")]);
+    const active=(dRes.drivers||[]).filter(d=>d.active);
+    const orders=oRes.orders||[];
+    const el=document.getElementById("alloc");
+    if(!active.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
+    if(!orders.length){ el.outerHTML='<div class="empty" id="alloc">No open orders to allocate.</div>'; return; }
+    const opts=(sel)=>'<option value="">— Unassigned —</option>'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("");
+    el.outerHTML='<div id="alloc">'+orders.map(o=>`
+      <div class="card">
+        <div class="drvtop">
+          <div><div class="nm">${esc(o.name)}</div><div class="hint">${esc(o.customerName||"")}</div></div>
+          <span class="pill ${o.assignedTo?'on':'off'}" id="apill-${esc(o.id)}">${o.assignedTo?esc(o.assignedTo):'unassigned'}</span>
+        </div>
+        <label class="hint" style="display:block;margin-top:8px">Allocate to driver</label>
+        <select onchange="assignOrder('${esc(o.id)}', this.value)">${opts(o.assignedTo)}</select>
+      </div>`).join("")+'</div>';
+  }catch(e){ const el=document.getElementById("alloc"); if(el) el.outerHTML='<div class="empty" id="alloc">'+esc(e.message)+'</div>'; }
+}
+
+async function assignOrder(orderGid, driverUsername){
+  try{
+    const r=await api("/admin/assign",{method:"POST",body:JSON.stringify({orderGid,driverUsername})});
+    const pill=document.getElementById("apill-"+orderGid);
+    if(pill){ pill.className="pill "+(r.assignedTo?"on":"off"); pill.textContent=r.assignedTo||"unassigned"; }
+    toast(r.assignedTo?("✓ Allocated to "+r.assignedTo):"✓ Unassigned");
+  }catch(e){ toast(e.message); }
+}
+window.assignOrder=assignOrder;
+
 // ---- boot ----
+if("serviceWorker" in navigator){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }
 if(TOKEN) renderApp(); else renderLogin();
 </script>
 </body>
