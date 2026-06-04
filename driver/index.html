@@ -168,10 +168,12 @@ async function renderOrders(){
   await loadList();
 }
 
+let ORDERS={};
 async function loadList(){
   const list=document.getElementById("list");
   try{
     const {orders}=await api("/orders");
+    ORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
     if(!orders.length){ list.outerHTML='<div class="empty" id="list">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Refresh</button></div>'; return; }
     list.outerHTML = '<div id="list">' + orders.map(card).join("") + '<button class="btn ghost" onclick="loadList()">Refresh</button></div>';
   }catch(e){ list.outerHTML='<div class="empty" id="list">'+esc(e.message)+'<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Retry</button></div>'; }
@@ -187,6 +189,7 @@ function card(o){
     ${o.phone? `<a class="row" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
     <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    ${o.phone? `<button class="btn ghost" style="margin-top:14px" onclick="notifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`:""}
     <div class="actions">
       <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
@@ -279,6 +282,7 @@ async function confirmFulfill(id){
   try{
     const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
       orderGid:id, photo:PHOTOS[id], cashCollected, cashAmount,
+      customerPhone:(ORDERS[id]||{}).phone||"",
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
@@ -290,17 +294,28 @@ async function confirmFulfill(id){
 
 async function reportIssue(id,status){
   const note=(document.getElementById("note-"+id)||{}).value||"";
+  const o=ORDERS[id]||{};
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
-    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note})});
+    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note,customerPhone:o.phone||"",orderName:o.name||""})});
     toast("Saved: "+status.replace("_"," "));
     cardEl.style.transition="opacity .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
   }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
 }
 
+async function notifyOtw(id){
+  const o=ORDERS[id]; if(!o) return;
+  if(!o.phone){ toast("No phone number on this order"); return; }
+  try{
+    const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",phone:o.phone,orderName:o.name,amount:o.amount,currency:o.currency,cod:o.cod})});
+    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); return; }
+    toast("📲 Customer notified");
+  }catch(e){ toast(e.message); }
+}
+
 window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
-window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill;
+window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw;
 
 // ---- boot ----
 if("serviceWorker" in navigator){

@@ -428,10 +428,12 @@ async function loadOrders(){
   await loadOrderList();
 }
 
+let OORDERS={};
 async function loadOrderList(){
   const list=document.getElementById("olist");
   try{
     const {orders}=await api("/orders");
+    OORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
     if(!orders.length){ list.outerHTML='<div class="empty" id="olist">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Refresh</button></div>'; return; }
     list.outerHTML='<div id="olist">'+orders.map(ocard).join("")+'<button class="btn ghost" onclick="loadOrderList()">Refresh</button></div>';
   }catch(e){ list.outerHTML='<div class="empty" id="olist">'+esc(e.message)+'<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Retry</button></div>'; }
@@ -447,6 +449,7 @@ function ocard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    ${o.phone? `<button class="btn ghost" style="margin-top:14px" onclick="onotifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`:""}
     <div class="oactions">
       <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
@@ -534,6 +537,7 @@ async function confirmOFulfill(id){
   try{
     const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
       orderGid:id, photo:OPHOTOS[id], cashCollected, cashAmount,
+      customerPhone:(OORDERS[id]||{}).phone||"",
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
@@ -544,16 +548,27 @@ async function confirmOFulfill(id){
 
 async function oreportIssue(id,status){
   const note=(document.getElementById("onote-"+id)||{}).value||"";
+  const o=OORDERS[id]||{};
   const el=document.getElementById("ocard-"+id); el.classList.add("fade");
   try{
-    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note})});
+    await api("/report-issue",{method:"POST",body:JSON.stringify({orderGid:id,status,note,customerPhone:o.phone||"",orderName:o.name||""})});
     toast("Saved: "+status.replace("_"," "));
     el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
   }catch(e){ el.classList.remove("fade"); toast(e.message); }
 }
 
+async function onotifyOtw(id){
+  const o=OORDERS[id]; if(!o) return;
+  if(!o.phone){ toast("No phone number on this order"); return; }
+  try{
+    const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",phone:o.phone,orderName:o.name,amount:o.amount,currency:o.currency,cod:o.cod})});
+    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); return; }
+    toast("📲 Customer notified");
+  }catch(e){ toast(e.message); }
+}
+
 window.loadOrderList=loadOrderList; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
-window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill;
+window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill; window.onotifyOtw=onotifyOtw;
 
 // ---- Summary (end-of-day, per driver) ----
 function todayDubai(){ return new Date(Date.now()+4*3600*1000).toISOString().slice(0,10); }
