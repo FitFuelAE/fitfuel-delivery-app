@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="FF Admin" />
 <link rel="manifest" href="./admin.webmanifest" />
-<link rel="apple-touch-icon" href="./admin-icon.svg" />
+<link rel="apple-touch-icon" href="/icon-512.png" />
 <title>FitFuel Delivery — Admin</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -151,7 +151,7 @@ function logout(){ TOKEN=""; NAME=""; ME=""; localStorage.removeItem("ff_admin_t
 function renderLogin(){
   root.innerHTML = `
    <div class="login">
-     <img src="./admin-icon.svg" alt="FitFuel" style="width:72px;height:72px;display:block;margin:0 auto 14px;border-radius:18px" />
+     <img src="/ff-logo.png" alt="FitFuel" style="width:120px;height:auto;display:block;margin:0 auto 12px" />
      <h2 style="margin-top:0">FitFuel Admin</h2>
      <p class="tag">Driver & delivery management</p>
      <label>Admin username</label>

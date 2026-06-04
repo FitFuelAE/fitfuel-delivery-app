@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Delivery" />
 <link rel="manifest" href="./manifest.webmanifest" />
-<link rel="apple-touch-icon" href="./icon.svg" />
+<link rel="apple-touch-icon" href="/icon-512.png" />
 <title>FitFuel Delivery</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -112,7 +112,7 @@ function logout(){ TOKEN=""; NAME=""; localStorage.removeItem("ff_token"); local
 function renderLogin(){
   root.innerHTML = `
    <div class="login">
-     <img class="logo" src="./icon.svg" alt="" />
+     <img class="logo" src="/ff-logo.png" alt="FitFuel" style="width:128px;height:auto" />
      <h2>FitFuel Delivery</h2>
      <label>Username</label>
      <input id="u" autocomplete="username" autocapitalize="none" autocorrect="off" inputmode="text" />
