@@ -1,9 +1,8 @@
 {
-  "id": "./admin.html",
   "name": "FitFuel Admin",
   "short_name": "FF Admin",
   "description": "FitFuel delivery management console",
-  "start_url": "./admin.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
