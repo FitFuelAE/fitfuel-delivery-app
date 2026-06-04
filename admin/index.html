@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<meta name="theme-color" content="#16a34a" />
+<meta name="theme-color" content="#111111" />
 <meta name="robots" content="noindex" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,7 +13,7 @@
 <title>FitFuel Delivery — Admin</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  :root { --green:#16a34a; --green-d:#15803d; --bg:#f5f6f8; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --red:#dc2626; --amber:#d97706; }
+  :root { --green:#111111; --green-d:#000000; --bg:#f5f6f8; --card:#fff; --line:#e5e7eb; --muted:#6b7280; --red:#dc2626; --amber:#d97706; }
   html,body { margin:0; padding:0; background:var(--bg); color:#111827;
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
   body { padding-bottom: env(safe-area-inset-bottom); }
@@ -57,10 +57,10 @@
   th { font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); }
   td.actions { white-space:nowrap; display:flex; gap:6px; }
   .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600; }
-  .pill.on { background:#dcfce7; color:var(--green-d); }
+  .pill.on { background:#e5e7eb; color:#111827; }
   .pill.off { background:#fee2e2; color:var(--red); }
-  .pill.status { background:#eef2ff; color:#3730a3; }
-  .pill.master { background:#fef3c7; color:#92400e; }
+  .pill.status { background:#f3f4f6; color:#374151; }
+  .pill.master { background:#111111; color:#ffffff; }
 
   /* Order cards (mirror the driver app) */
   .ocard { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
@@ -85,7 +85,7 @@
   .ofulfil label.fl { display:block; font-size:13px; font-weight:600; color:var(--muted); margin:6px 0; }
   .ofulfil input[type=file] { width:100%; font-size:14px; }
   .ofulfil .preview { display:none; width:100%; max-height:220px; object-fit:cover; border-radius:12px; margin-top:10px; border:1px solid var(--line); }
-  .ofulfil .cash { margin-top:12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:10px 12px; }
+  .ofulfil .cash { margin-top:12px; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; }
   .ofulfil .cash label { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; color:var(--green-d); }
   .ofulfil .cash input[type=number] { width:100%; margin-top:8px; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; }
   .ofulfil .confirm { margin-top:12px; }
@@ -151,7 +151,8 @@ function logout(){ TOKEN=""; NAME=""; ME=""; localStorage.removeItem("ff_admin_t
 function renderLogin(){
   root.innerHTML = `
    <div class="login">
-     <h2>FitFuel Admin</h2>
+     <img src="./admin-icon.svg" alt="FitFuel" style="width:72px;height:72px;display:block;margin:0 auto 14px;border-radius:18px" />
+     <h2 style="margin-top:0">FitFuel Admin</h2>
      <p class="tag">Driver & delivery management</p>
      <label>Admin username</label>
      <input id="u" autocapitalize="none" autocorrect="off" inputmode="text" />
@@ -457,7 +458,7 @@ function ocard(o){
       ${o.cod ? `<div class="cash">
         <label><input type="checkbox" id="ocash-${esc(o.id)}" checked /> Cash received (COD)</label>
         <input type="number" inputmode="decimal" step="0.01" id="ocamt-${esc(o.id)}" value="${esc(o.amount)}" />
-        <div style="font-size:12px;color:#15803d;margin-top:6px">Enter the actual cash collected — less than the total records a partial payment.</div>
+        <div style="font-size:12px;color:#000000;margin-top:6px">Enter the actual cash collected — less than the total records a partial payment.</div>
       </div>` : ""}
       <div class="geo" id="ogeo-${esc(o.id)}"></div>
       <button class="btn confirm" onclick="confirmOFulfill('${esc(o.id)}')">Confirm delivery</button>
