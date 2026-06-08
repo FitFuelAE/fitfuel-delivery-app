@@ -188,7 +188,7 @@ function card(o){
     ${o.address? `<a class="row" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone? `<a class="row" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
-    <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     ${o.phone? `<button class="btn ghost" style="margin-top:14px" onclick="notifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`:""}
     <div class="actions">
       <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
