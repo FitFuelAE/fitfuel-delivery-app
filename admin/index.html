@@ -455,9 +455,9 @@ function ocard(o){
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
     </div>
     <div class="ofulfil" id="offl-${esc(o.id)}">
-      <label class="fl">Proof of delivery photo (required)</label>
+      <label class="fl">Proof of delivery photos (up to 3, required)</label>
       <input type="file" accept="image/*" capture="environment" id="ophoto-${esc(o.id)}" onchange="onOPhoto('${esc(o.id)}')" />
-      <img class="preview" id="oprev-${esc(o.id)}" alt="" />
+      <div class="thumbs" id="othumbs-${esc(o.id)}" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div>
       ${o.cod ? `<div class="cash">
         <label><input type="checkbox" id="ocash-${esc(o.id)}" checked /> Cash received (COD)</label>
         <input type="number" inputmode="decimal" step="0.01" id="ocamt-${esc(o.id)}" value="${esc(o.amount)}" />
@@ -492,7 +492,19 @@ function startGeo(){
 }
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) startGeo(); });
 
-const OPHOTOS={};
+const OPHOTOS={};   // id -> array of data URLs (max 3)
+const MAX_PHOTOS=3;
+function renderOThumbs(id){
+  const wrap=document.getElementById("othumbs-"+id); if(!wrap) return;
+  const arr=OPHOTOS[id]||[];
+  wrap.innerHTML=arr.map((src,i)=>`<div style="position:relative">
+      <img src="${src}" style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line)" />
+      <button type="button" onclick="removeOPhoto('${id}',${i})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:var(--red);color:#fff;font-size:13px;line-height:1">✕</button>
+    </div>`).join("");
+  const inp=document.getElementById("ophoto-"+id);
+  if(inp) inp.style.display = arr.length>=MAX_PHOTOS ? "none" : "block";
+}
+function removeOPhoto(id,i){ if(OPHOTOS[id]){ OPHOTOS[id].splice(i,1); renderOThumbs(id); } }
 function downscale(file,maxDim,quality){
   return new Promise((resolve,reject)=>{
     const img=new Image();
@@ -519,16 +531,19 @@ function otoggleFulfill(id){
   if(el.classList.contains("open")){ startGeo(); ogeoHint(document.getElementById("ogeo-"+id)); }
 }
 async function onOPhoto(id){
-  const f=(document.getElementById("ophoto-"+id).files||[])[0];
+  const inp=document.getElementById("ophoto-"+id);
+  const f=(inp.files||[])[0];
   if(!f) return;
+  if((OPHOTOS[id]||[]).length>=MAX_PHOTOS){ toast("Up to 3 photos"); inp.value=""; return; }
   try{
     const dataUrl=await downscale(f,1280,0.6);
-    OPHOTOS[id]=dataUrl;
-    const prev=document.getElementById("oprev-"+id); prev.src=dataUrl; prev.style.display="block";
+    (OPHOTOS[id]=OPHOTOS[id]||[]).push(dataUrl);
+    renderOThumbs(id);
   }catch{ toast("Couldn't read that photo"); }
+  finally{ inp.value=""; }
 }
 async function confirmOFulfill(id){
-  if(!OPHOTOS[id]){ toast("Please add a proof photo first"); return; }
+  if(!(OPHOTOS[id]&&OPHOTOS[id].length)){ toast("Please add at least one proof photo"); return; }
   const codCheck=document.getElementById("ocash-"+id);
   const cashCollected=codCheck?codCheck.checked:false;
   const amtEl=document.getElementById("ocamt-"+id);
@@ -536,8 +551,7 @@ async function confirmOFulfill(id){
   const el=document.getElementById("ocard-"+id); el.classList.add("fade");
   try{
     const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
-      orderGid:id, photo:OPHOTOS[id], cashCollected, cashAmount,
-      customerPhone:(OORDERS[id]||{}).phone||"",
+      orderGid:id, photos:OPHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
@@ -568,7 +582,7 @@ async function onotifyOtw(id){
 }
 
 window.loadOrderList=loadOrderList; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
-window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill; window.onotifyOtw=onotifyOtw;
+window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill; window.removeOPhoto=removeOPhoto; window.onotifyOtw=onotifyOtw;
 
 // ---- Summary (end-of-day, per driver) ----
 function todayDubai(){ return new Date(Date.now()+4*3600*1000).toISOString().slice(0,10); }
@@ -608,8 +622,9 @@ function delivRow(it){
     ? `<a href="https://maps.google.com/?q=${esc(it.lat)},${esc(it.lng)}" target="_blank">📍 GPS</a>`
     : '<span class="hint">no GPS</span>';
   const cash=it.cash_collected?` · 💵 ${esc(fmtMoney(it.cash_amount))}`:"";
-  const img=it.photoUrl
-    ? `<a href="${esc(it.photoUrl)}" target="_blank"><img src="${esc(it.photoUrl)}" alt="proof" /></a>`
+  const urls=it.photoUrls||(it.photoUrl?[it.photoUrl]:[]);
+  const img=urls.length
+    ? urls.map(u=>`<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" alt="proof" /></a>`).join("")
     : `<img alt="no photo" />`;
   return `<div class="deliv">
     ${img}

@@ -195,9 +195,9 @@ function card(o){
       <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
     </div>
     <div class="fulfil" id="ffl-${esc(o.id)}">
-      <label class="fl">Proof of delivery photo (required)</label>
+      <label class="fl">Proof of delivery photos (up to 3, required)</label>
       <input type="file" accept="image/*" capture="environment" id="photo-${esc(o.id)}" onchange="onPhoto('${esc(o.id)}')" />
-      <img class="preview" id="prev-${esc(o.id)}" alt="" />
+      <div class="thumbs" id="thumbs-${esc(o.id)}" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div>
       ${o.cod ? `<div class="cash">
         <label><input type="checkbox" id="cash-${esc(o.id)}" checked /> Cash received (COD)</label>
         <input type="number" inputmode="decimal" step="0.01" id="camt-${esc(o.id)}" value="${esc(o.amount)}" />
@@ -232,8 +232,21 @@ function startGeo(){
 }
 document.addEventListener("visibilitychange",()=>{ if(!document.hidden) startGeo(); });
 
-// ---- Fulfil: proof photo (required) + COD cash + GPS ----
-const PHOTOS={};
+// ---- Fulfil: up to 3 proof photos (required) + COD cash + GPS ----
+const PHOTOS={};   // id -> array of data URLs (max 3)
+const MAX_PHOTOS=3;
+
+function renderThumbs(id){
+  const wrap=document.getElementById("thumbs-"+id); if(!wrap) return;
+  const arr=PHOTOS[id]||[];
+  wrap.innerHTML=arr.map((src,i)=>`<div style="position:relative">
+      <img src="${src}" style="width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line)" />
+      <button type="button" onclick="removePhoto('${id}',${i})" style="position:absolute;top:-8px;right:-8px;width:24px;height:24px;border-radius:50%;border:none;background:var(--red);color:#fff;font-size:13px;line-height:1">✕</button>
+    </div>`).join("");
+  const inp=document.getElementById("photo-"+id);
+  if(inp) inp.style.display = arr.length>=MAX_PHOTOS ? "none" : "block";
+}
+function removePhoto(id,i){ if(PHOTOS[id]){ PHOTOS[id].splice(i,1); renderThumbs(id); } }
 
 function downscale(file,maxDim,quality){
   return new Promise((resolve,reject)=>{
@@ -263,17 +276,20 @@ function toggleFulfill(id){
 }
 
 async function onPhoto(id){
-  const f=(document.getElementById("photo-"+id).files||[])[0];
+  const inp=document.getElementById("photo-"+id);
+  const f=(inp.files||[])[0];
   if(!f) return;
+  if((PHOTOS[id]||[]).length>=MAX_PHOTOS){ toast("Up to 3 photos"); inp.value=""; return; }
   try{
     const dataUrl=await downscale(f,1280,0.6);
-    PHOTOS[id]=dataUrl;
-    const prev=document.getElementById("prev-"+id); prev.src=dataUrl; prev.style.display="block";
+    (PHOTOS[id]=PHOTOS[id]||[]).push(dataUrl);
+    renderThumbs(id);
   }catch{ toast("Couldn't read that photo"); }
+  finally{ inp.value=""; }   // reset so the camera can be opened again
 }
 
 async function confirmFulfill(id){
-  if(!PHOTOS[id]){ toast("Please add a proof photo first"); return; }
+  if(!(PHOTOS[id]&&PHOTOS[id].length)){ toast("Please add at least one proof photo"); return; }
   const codCheck=document.getElementById("cash-"+id);
   const cashCollected=codCheck?codCheck.checked:false;
   const amtEl=document.getElementById("camt-"+id);
@@ -281,8 +297,7 @@ async function confirmFulfill(id){
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
     const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
-      orderGid:id, photo:PHOTOS[id], cashCollected, cashAmount,
-      customerPhone:(ORDERS[id]||{}).phone||"",
+      orderGid:id, photos:PHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
@@ -315,7 +330,7 @@ async function notifyOtw(id){
 }
 
 window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
-window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw;
+window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw; window.removePhoto=removePhoto;
 
 // ---- boot ----
 if("serviceWorker" in navigator){
