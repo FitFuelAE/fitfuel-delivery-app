@@ -123,6 +123,7 @@ const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
 let ME = localStorage.getItem("ff_admin_user") || "";
+let ME_MASTER = localStorage.getItem("ff_admin_master") === "1";
 let TAB = "orders";
 
 function toast(msg) {
@@ -145,7 +146,7 @@ async function api(path, opts={}) {
   return data;
 }
 
-function logout(){ TOKEN=""; NAME=""; ME=""; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); localStorage.removeItem("ff_admin_user"); renderLogin(); }
+function logout(){ TOKEN=""; NAME=""; ME=""; ME_MASTER=false; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); localStorage.removeItem("ff_admin_user"); localStorage.removeItem("ff_admin_master"); renderLogin(); }
 
 // ---- Login ----
 function renderLogin(){
@@ -171,8 +172,8 @@ function renderLogin(){
     go.disabled=true; go.textContent="Logging in…";
     try{
       const r = await api("/admin/login",{method:"POST",body:JSON.stringify({username,password})});
-      TOKEN=r.token; NAME=r.name||username; ME=(r.username||username).toLowerCase();
-      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME); localStorage.setItem("ff_admin_user",ME);
+      TOKEN=r.token; NAME=r.name||username; ME=(r.username||username).toLowerCase(); ME_MASTER=!!r.isMaster;
+      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME); localStorage.setItem("ff_admin_user",ME); localStorage.setItem("ff_admin_master", ME_MASTER?"1":"");
       renderApp();
     }catch(e){ err.textContent=e.message; go.disabled=false; go.textContent="Log in"; }
   }
@@ -449,7 +450,9 @@ function ocard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    ${o.phone? `<button class="btn ghost" style="margin-top:14px" onclick="onotifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`:""}
+    ${o.phone ? (o.otwSent
+      ? `<div style="margin-top:14px;display:flex;gap:8px"><button class="btn ghost" disabled style="margin-top:0;flex:1">✓ Customer notified</button>${ME_MASTER?`<button class="btn ghost sm" style="margin-top:0" onclick="resetOtw('${esc(o.id)}')">↺ Reset</button>`:""}</div>`
+      : `<button class="btn ghost" id="ootw-${esc(o.id)}" style="margin-top:14px" onclick="onotifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`) : ""}
     <div class="oactions">
       <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
@@ -464,7 +467,7 @@ function ocard(o){
         <div style="font-size:12px;color:#000000;margin-top:6px">Enter the actual cash collected — less than the total records a partial payment.</div>
       </div>` : ""}
       <div class="geo" id="ogeo-${esc(o.id)}"></div>
-      <button class="btn confirm" onclick="confirmOFulfill('${esc(o.id)}')">Confirm delivery</button>
+      <button class="btn confirm" id="ocfm-${esc(o.id)}" onclick="confirmOFulfill('${esc(o.id)}')">Confirm delivery</button>
     </div>
     <div class="oissues" id="oiss-${esc(o.id)}">
       <div class="opt">
@@ -544,6 +547,8 @@ async function onOPhoto(id){
 }
 async function confirmOFulfill(id){
   if(!(OPHOTOS[id]&&OPHOTOS[id].length)){ toast("Please add at least one proof photo"); return; }
+  const btn=document.getElementById("ocfm-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
   const codCheck=document.getElementById("ocash-"+id);
   const cashCollected=codCheck?codCheck.checked:false;
   const amtEl=document.getElementById("ocamt-"+id);
@@ -557,7 +562,7 @@ async function confirmOFulfill(id){
     toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
     delete OPHOTOS[id];
     el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
-  }catch(e){ el.classList.remove("fade"); toast(e.message); }
+  }catch(e){ el.classList.remove("fade"); if(btn){ btn.disabled=false; btn.textContent="Confirm delivery"; } toast(e.message); }
 }
 
 async function oreportIssue(id,status){
@@ -574,15 +579,25 @@ async function oreportIssue(id,status){
 async function onotifyOtw(id){
   const o=OORDERS[id]; if(!o) return;
   if(!o.phone){ toast("No phone number on this order"); return; }
+  const btn=document.getElementById("ootw-"+id);
+  if(btn){ btn.disabled=true; btn.textContent="Sending…"; }
   try{
     const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",orderGid:id})});
-    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); return; }
-    toast("📲 Customer notified");
-  }catch(e){ toast(e.message); }
+    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); if(btn){ btn.disabled=false; btn.textContent="📲 On my way — notify customer"; } return; }
+    if(o) o.otwSent=true;
+    if(btn){ btn.textContent="✓ Customer notified"; btn.disabled=true; }
+    toast(r&&r.alreadySent ? "Already notified" : "📲 Customer notified");
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent="📲 On my way — notify customer"; } toast(e.message); }
+}
+// Master-only: re-enable "On my way" for an order.
+async function resetOtw(id){
+  if(!confirm("Allow 'On my way' to be sent again for this order?")) return;
+  try{ await api("/admin/reset-otw",{method:"POST",body:JSON.stringify({orderGid:id})}); toast("↺ Reset — can notify again"); loadOrderList(); }
+  catch(e){ toast(e.message); }
 }
 
 window.loadOrderList=loadOrderList; window.otoggleIssue=otoggleIssue; window.oreportIssue=oreportIssue;
-window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill; window.removeOPhoto=removeOPhoto; window.onotifyOtw=onotifyOtw;
+window.otoggleFulfill=otoggleFulfill; window.onOPhoto=onOPhoto; window.confirmOFulfill=confirmOFulfill; window.removeOPhoto=removeOPhoto; window.onotifyOtw=onotifyOtw; window.resetOtw=resetOtw;
 
 // ---- Summary (end-of-day, per driver) ----
 function todayDubai(){ return new Date(Date.now()+4*3600*1000).toISOString().slice(0,10); }

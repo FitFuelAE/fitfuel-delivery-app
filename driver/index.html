@@ -189,7 +189,9 @@ function card(o){
     ${o.phone? `<a class="row" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
     <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    ${o.phone? `<button class="btn ghost" style="margin-top:14px" onclick="notifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`:""}
+    ${o.phone ? (o.otwSent
+      ? `<button class="btn ghost" style="margin-top:14px" disabled>✓ Customer notified</button>`
+      : `<button class="btn ghost" id="otw-${esc(o.id)}" style="margin-top:14px" onclick="notifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`) : ""}
     <div class="actions">
       <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
       <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
@@ -204,7 +206,7 @@ function card(o){
         <div style="font-size:12px;color:#000000;margin-top:6px">Enter the actual cash collected — less than the total records a partial payment.</div>
       </div>` : ""}
       <div class="geo" id="geo-${esc(o.id)}"></div>
-      <button class="btn confirm" onclick="confirmFulfill('${esc(o.id)}')">Confirm delivery</button>
+      <button class="btn confirm" id="cfm-${esc(o.id)}" onclick="confirmFulfill('${esc(o.id)}')">Confirm delivery</button>
     </div>
     <div class="issues" id="iss-${esc(o.id)}">
       <div class="opt">
@@ -290,6 +292,8 @@ async function onPhoto(id){
 
 async function confirmFulfill(id){
   if(!(PHOTOS[id]&&PHOTOS[id].length)){ toast("Please add at least one proof photo"); return; }
+  const btn=document.getElementById("cfm-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
   const codCheck=document.getElementById("cash-"+id);
   const cashCollected=codCheck?codCheck.checked:false;
   const amtEl=document.getElementById("camt-"+id);
@@ -304,7 +308,7 @@ async function confirmFulfill(id){
     delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
-  }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
+  }catch(e){ cardEl.classList.remove("fade"); if(btn){ btn.disabled=false; btn.textContent="Confirm delivery"; } toast(e.message); }
 }
 
 async function reportIssue(id,status){
@@ -322,11 +326,15 @@ async function reportIssue(id,status){
 async function notifyOtw(id){
   const o=ORDERS[id]; if(!o) return;
   if(!o.phone){ toast("No phone number on this order"); return; }
+  const btn=document.getElementById("otw-"+id);
+  if(btn){ btn.disabled=true; btn.textContent="Sending…"; }
   try{
     const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",orderGid:id})});
-    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); return; }
-    toast("📲 Customer notified");
-  }catch(e){ toast(e.message); }
+    if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); if(btn){ btn.disabled=false; btn.textContent="📲 On my way — notify customer"; } return; }
+    if(o) o.otwSent=true;
+    if(btn){ btn.textContent="✓ Customer notified"; btn.disabled=true; }
+    toast(r&&r.alreadySent ? "Already notified" : "📲 Customer notified");
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent="📲 On my way — notify customer"; } toast(e.message); }
 }
 
 window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
