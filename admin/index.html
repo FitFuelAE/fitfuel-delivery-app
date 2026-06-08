@@ -130,7 +130,7 @@ function toast(msg) {
   t.textContent = msg; t.classList.add("show");
   setTimeout(() => t.classList.remove("show"), 2400);
 }
-function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); return isNaN(d)? esc(iso) : d.toLocaleString(); }
 
 async function api(path, opts={}) {
@@ -561,7 +561,7 @@ async function onotifyOtw(id){
   const o=OORDERS[id]; if(!o) return;
   if(!o.phone){ toast("No phone number on this order"); return; }
   try{
-    const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",phone:o.phone,orderName:o.name,amount:o.amount,currency:o.currency,cod:o.cod})});
+    const r=await api("/notify",{method:"POST",body:JSON.stringify({kind:"otw",orderGid:id})});
     if(r&&r.skipped){ toast("WhatsApp isn't set up yet"); return; }
     toast("📲 Customer notified");
   }catch(e){ toast(e.message); }
