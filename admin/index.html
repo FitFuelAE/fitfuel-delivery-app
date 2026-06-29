@@ -125,6 +125,7 @@ let NAME = localStorage.getItem("ff_admin_name") || "";
 let ME = localStorage.getItem("ff_admin_user") || "";
 let ME_MASTER = localStorage.getItem("ff_admin_master") === "1";
 let TAB = "orders";
+let DRIVERS = [], ADMINS = [];   // last-loaded lists, for the Edit dialogs
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -239,6 +240,7 @@ async function loadDrivers(){
 
   try{
     const {drivers}=await api("/admin/drivers");
+    DRIVERS=drivers;
     const list=document.getElementById("dlist");
     if(!drivers.length){ list.innerHTML='<div class="empty">No drivers yet — add one above.</div>'; return; }
     list.innerHTML = `<table><thead><tr>
@@ -255,6 +257,7 @@ function driverRow(d){
     <td>${d.active?'<span class="pill on">active</span>':'<span class="pill off">disabled</span>'}</td>
     <td>${esc((d.created_at||"").slice(0,10))}</td>
     <td class="actions">
+      <button class="btn sm ghost" onclick="editDriver('${u}')">Edit</button>
       <button class="btn sm ghost" onclick="resetPin('${u}')">Reset PIN</button>
       <button class="btn sm ${d.active?'danger':'ghost'}" onclick="toggleDriver('${u}',${d.active?'false':'true'})">${d.active?'Disable':'Enable'}</button>
     </td>
@@ -273,6 +276,18 @@ async function addDriver(){
     toast("✓ Driver added");
     loadDrivers();
   }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add driver"; }
+}
+
+async function editDriver(username){
+  const d=DRIVERS.find(x=>x.username===username)||{username,name:""};
+  const name=prompt("Driver's full name:", d.name||""); if(name===null) return;
+  if(!name.trim()){ toast("Name cannot be empty"); return; }
+  const nu=prompt("Username (login ID — lowercase letters, numbers, . _ -):", d.username); if(nu===null) return;
+  if(!nu.trim()){ toast("Username cannot be empty"); return; }
+  try{
+    await api("/admin/driver-edit",{method:"POST",body:JSON.stringify({username, name:name.trim(), newUsername:nu.trim()})});
+    toast("✓ Driver updated"); loadDrivers();
+  }catch(e){ toast(e.message); }
 }
 
 async function resetPin(username){
@@ -347,6 +362,7 @@ async function loadAdmins(){
 
   try{
     const {admins}=await api("/admin/admins");
+    ADMINS=admins;
     const list=document.getElementById("alist2");
     list.innerHTML = `<table><thead><tr>
         <th>Username</th><th>Name</th><th>Status</th><th>Added</th><th></th>
@@ -360,10 +376,12 @@ function adminRow(a){
   const badges = (a.is_master?'<span class="pill master">master</span> ':'') + (isMe?'<span class="pill status">you</span>':'');
   // Master row: only the master (you) can reset its password; never disable/delete.
   // Your own row: you can reset your password, but not disable/delete yourself.
+  const canEdit   = a.is_master ? isMe : true;
   const canReset  = a.is_master ? isMe : true;
   const canToggle = !a.is_master && !isMe;
   const canDelete = !a.is_master && !isMe;
   const btns = [
+    canEdit   ? `<button class="btn sm ghost" onclick="editAdmin('${u}')">Edit</button>` : "",
     canReset  ? `<button class="btn sm ghost" onclick="resetAdmin('${u}')">Reset password</button>` : "",
     canToggle ? `<button class="btn sm ${a.active?'danger':'ghost'}" onclick="toggleAdmin('${u}',${a.active?'false':'true'})">${a.active?'Disable':'Enable'}</button>` : "",
     canDelete ? `<button class="btn sm danger" onclick="deleteAdmin('${u}')">Delete</button>` : "",
@@ -389,6 +407,20 @@ async function addAdmin(){
     toast("✓ Admin added");
     loadAdmins();
   }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add admin"; }
+}
+
+async function editAdmin(username){
+  const a=ADMINS.find(x=>x.username===username)||{username,name:""};
+  const name=prompt("Admin's full name:", a.name||""); if(name===null) return;
+  if(!name.trim()){ toast("Name cannot be empty"); return; }
+  const nu=prompt("Username (login ID — lowercase letters, numbers, . _ -):", a.username); if(nu===null) return;
+  if(!nu.trim()){ toast("Username cannot be empty"); return; }
+  try{
+    await api("/admin/admin-edit",{method:"POST",body:JSON.stringify({username, name:name.trim(), newUsername:nu.trim()})});
+    toast("✓ Admin updated");
+    if(username===ME){ ME=nu.trim().toLowerCase(); localStorage.setItem("ff_admin_user",ME); }
+    loadAdmins();
+  }catch(e){ toast(e.message); }
 }
 
 async function resetAdmin(username){
@@ -420,8 +452,8 @@ async function deleteAdmin(username){
   }catch(e){ toast(e.message); }
 }
 
-window.resetPin=resetPin; window.toggleDriver=toggleDriver;
-window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin;
+window.resetPin=resetPin; window.toggleDriver=toggleDriver; window.editDriver=editDriver;
+window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin; window.editAdmin=editAdmin;
 
 // ---- Orders (same view drivers get: see / fulfill / report issues) ----
 async function loadOrders(){
