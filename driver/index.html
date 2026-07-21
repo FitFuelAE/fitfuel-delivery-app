@@ -304,7 +304,10 @@ async function confirmFulfill(id){
       orderGid:id, photos:PHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
-    toast(r&&r.paymentWarning ? ("✓ Fulfilled — payment not marked: "+r.paymentWarning) : "✓ Fulfilled");
+    const warns=[];
+    if(r&&r.paymentWarning) warns.push("payment not marked: "+r.paymentWarning);
+    if(r&&r.deliveryWarning) warns.push("not marked delivered: "+r.deliveryWarning);
+    toast(warns.length ? ("✓ Fulfilled — "+warns.join(" · ")) : "✓ Fulfilled & delivered");
     delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
