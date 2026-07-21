@@ -172,9 +172,9 @@ let ORDERS={};
 async function loadList(){
   const list=document.getElementById("list");
   try{
-    const {orders}=await api("/orders");
+    const {orders}=await api("/orders?scope=deliver");
     ORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
-    if(!orders.length){ list.outerHTML='<div class="empty" id="list">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Refresh</button></div>'; return; }
+    if(!orders.length){ list.outerHTML='<div class="empty" id="list">🎉 No deliveries assigned to you right now.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Refresh</button></div>'; return; }
     list.outerHTML = '<div id="list">' + orders.map(card).join("") + '<button class="btn ghost" onclick="loadList()">Refresh</button></div>';
   }catch(e){ list.outerHTML='<div class="empty" id="list">'+esc(e.message)+'<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadList()">Retry</button></div>'; }
 }
@@ -189,11 +189,8 @@ function card(o){
     ${o.phone? `<a class="row" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note? `<div class="note">📝 ${esc(o.note)}</div>`:""}
     <div class="items">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    ${o.phone ? (o.otwSent
-      ? `<button class="btn ghost" style="margin-top:14px" disabled>✓ Customer notified</button>`
-      : `<button class="btn ghost" id="otw-${esc(o.id)}" style="margin-top:14px" onclick="notifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`) : ""}
     <div class="actions">
-      <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn" onclick="toggleFulfill('${esc(o.id)}')">✓ Delivered</button>
       <button class="btn ghost" onclick="toggleIssue('${esc(o.id)}')">Issue ▾</button>
     </div>
     <div class="fulfil" id="ffl-${esc(o.id)}">
@@ -300,14 +297,14 @@ async function confirmFulfill(id){
   const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
-    const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
+    const r = await api("/deliver",{method:"POST",body:JSON.stringify({
       orderGid:id, photos:PHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     const warns=[];
     if(r&&r.paymentWarning) warns.push("payment not marked: "+r.paymentWarning);
     if(r&&r.deliveryWarning) warns.push("not marked delivered: "+r.deliveryWarning);
-    toast(warns.length ? ("✓ Fulfilled — "+warns.join(" · ")) : "✓ Fulfilled & delivered");
+    toast(warns.length ? ("✓ Delivered — "+warns.join(" · ")) : "✓ Delivered");
     delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);

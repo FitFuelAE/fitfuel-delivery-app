@@ -191,6 +191,7 @@ function renderApp(){
    </header>
    <div class="wrap">
      <div class="tabs">
+       <button id="tab-fulfillment" class="${TAB==="fulfillment"?"on":""}">Fulfillment</button>
        <button id="tab-orders" class="${TAB==="orders"?"on":""}">Orders</button>
        <button id="tab-allocate" class="${TAB==="allocate"?"on":""}">Allocate</button>
        <button id="tab-drivers" class="${TAB==="drivers"?"on":""}">Drivers</button>
@@ -201,6 +202,7 @@ function renderApp(){
      <div id="panel"><div class="loading">Loading…</div></div>
    </div>`;
   document.getElementById("logout").onclick=logout;
+  document.getElementById("tab-fulfillment").onclick=()=>{ TAB="fulfillment"; renderApp(); };
   document.getElementById("tab-orders").onclick=()=>{ TAB="orders"; renderApp(); };
   document.getElementById("tab-allocate").onclick=()=>{ TAB="allocate"; renderApp(); };
   document.getElementById("tab-drivers").onclick=()=>{ TAB="drivers"; renderApp(); };
@@ -208,7 +210,8 @@ function renderApp(){
   document.getElementById("tab-summary").onclick=()=>{ TAB="summary"; renderApp(); };
   document.getElementById("tab-activity").onclick=()=>{ TAB="activity"; renderApp(); };
   startGeo();
-  if(TAB==="orders") loadOrders();
+  if(TAB==="fulfillment") loadFulfillment();
+  else if(TAB==="orders") loadOrders();
   else if(TAB==="allocate") loadAllocate();
   else if(TAB==="drivers") loadDrivers();
   else if(TAB==="admins") loadAdmins();
@@ -456,6 +459,69 @@ window.resetPin=resetPin; window.toggleDriver=toggleDriver; window.editDriver=ed
 window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin; window.editAdmin=editAdmin;
 
 // ---- Orders (same view drivers get: see / fulfill / report issues) ----
+// ---- Fulfillment (warehouse: verify the pick, then dispatch) ----
+async function loadFulfillment(){
+  document.getElementById("panel").innerHTML=`
+    <p class="hint" style="margin:0 0 12px">Check the items, then press <b>✓ Fulfilled</b> to dispatch — this fulfils the order in Shopify and WhatsApps the customer that it's on the way.<br>
+    For orders going out with a driver who isn't on the app, press <b>📲 Notify shipped</b> instead (message only — you fulfil it in Shopify later, and the customer is told "delivered" automatically).</p>
+    <div id="flist"><div class="loading">Loading orders…</div></div>`;
+  await loadFulfillList();
+}
+
+async function loadFulfillList(){
+  const list=document.getElementById("flist");
+  try{
+    const {orders}=await api("/orders?scope=unfulfilled");
+    if(!orders.length){ list.innerHTML='<div class="empty">🎉 Nothing waiting to be fulfilled.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadFulfillList()">Refresh</button></div>'; return; }
+    list.innerHTML = orders.map(fcard).join("")+'<button class="btn ghost" onclick="loadFulfillList()">Refresh</button>';
+  }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+function fcard(o){
+  const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
+  return `
+  <div class="ocard" id="fcard-${esc(o.id)}">
+    <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
+    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}</div>
+    ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
+    ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
+    ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
+    <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    <div class="oactions">
+      <button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>
+    </div>
+  </div>`;
+}
+
+async function fulfilOrder(id){
+  if(!confirm("Fulfil this order in Shopify and tell the customer it's on the way?")) return;
+  const btn=document.getElementById("ff-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
+  const el=document.getElementById("fcard-"+id); if(el) el.classList.add("fade");
+  try{
+    const r=await api("/admin/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    toast(r&&r.otwWarning ? ("✓ Fulfilled — customer not messaged: "+r.otwWarning) : "✓ Fulfilled & customer notified");
+    if(el){ el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300); }
+  }catch(e){
+    if(el) el.classList.remove("fade");
+    if(btn){ btn.disabled=false; btn.textContent="✓ Fulfilled"; }
+    toast(e.message);
+  }
+}
+
+async function notifyShipped(id){
+  const btn=document.getElementById("fn-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Sending…"; }
+  try{
+    const r=await api("/admin/notify-shipped",{method:"POST",body:JSON.stringify({orderGid:id})});
+    if(r&&r.ok){ if(btn) btn.textContent="✓ Customer notified"; toast("📲 Customer notified"); }
+    else { if(btn){ btn.disabled=false; btn.textContent="📲 Notify shipped"; } toast((r&&r.error)||"Couldn't notify"); }
+  }catch(e){ if(btn){ btn.disabled=false; btn.textContent="📲 Notify shipped"; } toast(e.message); }
+}
+
+window.loadFulfillList=loadFulfillList; window.fulfilOrder=fulfilOrder; window.notifyShipped=notifyShipped;
+
 async function loadOrders(){
   document.getElementById("panel").innerHTML='<div class="loading" id="olist">Loading orders…</div>';
   await loadOrderList();
@@ -465,7 +531,7 @@ let OORDERS={};
 async function loadOrderList(){
   const list=document.getElementById("olist");
   try{
-    const {orders}=await api("/orders");
+    const {orders}=await api("/orders?scope=deliver");
     OORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
     if(!orders.length){ list.outerHTML='<div class="empty" id="olist">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Refresh</button></div>'; return; }
     list.outerHTML='<div id="olist">'+orders.map(ocard).join("")+'<button class="btn ghost" onclick="loadOrderList()">Refresh</button></div>';
@@ -482,11 +548,8 @@ function ocard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    ${o.phone ? (o.otwSent
-      ? `<div style="margin-top:14px;display:flex;gap:8px"><button class="btn ghost" disabled style="margin-top:0;flex:1">✓ Customer notified</button>${ME_MASTER?`<button class="btn ghost sm" style="margin-top:0" onclick="resetOtw('${esc(o.id)}')">↺ Reset</button>`:""}</div>`
-      : `<button class="btn ghost" id="ootw-${esc(o.id)}" style="margin-top:14px" onclick="onotifyOtw('${esc(o.id)}')">📲 On my way — notify customer</button>`) : ""}
     <div class="oactions">
-      <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Fulfilled</button>
+      <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Delivered</button>
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
     </div>
     <div class="ofulfil" id="offl-${esc(o.id)}">
@@ -587,14 +650,14 @@ async function confirmOFulfill(id){
   const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
   const el=document.getElementById("ocard-"+id); el.classList.add("fade");
   try{
-    const r = await api("/fulfill",{method:"POST",body:JSON.stringify({
+    const r = await api("/deliver",{method:"POST",body:JSON.stringify({
       orderGid:id, photos:OPHOTOS[id], cashCollected, cashAmount,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     const warns=[];
     if(r&&r.paymentWarning) warns.push("payment not marked: "+r.paymentWarning);
     if(r&&r.deliveryWarning) warns.push("not marked delivered: "+r.deliveryWarning);
-    toast(warns.length ? ("✓ Fulfilled — "+warns.join(" · ")) : "✓ Fulfilled & delivered");
+    toast(warns.length ? ("✓ Delivered — "+warns.join(" · ")) : "✓ Delivered");
     delete OPHOTOS[id];
     el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300);
   }catch(e){ el.classList.remove("fade"); if(btn){ btn.disabled=false; btn.textContent="Confirm delivery"; } toast(e.message); }
@@ -691,7 +754,7 @@ async function loadAllocate(){
   const panel=document.getElementById("panel");
   panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
   try{
-    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders")]);
+    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=deliver")]);
     const active=(dRes.drivers||[]).filter(d=>d.active);
     const orders=oRes.orders||[];
     const el=document.getElementById("alloc");
