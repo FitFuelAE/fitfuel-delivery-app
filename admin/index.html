@@ -473,7 +473,17 @@ async function loadFulfillList(){
   try{
     const {orders}=await api("/orders?scope=unfulfilled");
     if(!orders.length){ list.innerHTML='<div class="empty">🎉 Nothing waiting to be fulfilled.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadFulfillList()">Refresh</button></div>'; return; }
-    list.innerHTML = orders.map(fcard).join("")+'<button class="btn ghost" onclick="loadFulfillList()">Refresh</button>';
+    // Group driver-wise so the warehouse can pick one driver's run at a time.
+    const groups={};
+    for(const o of orders){ const k=o.assignedTo||"__none"; (groups[k]=groups[k]||[]).push(o); }
+    const keys=Object.keys(groups).sort((a,b)=> a==="__none"?1 : b==="__none"?-1 : a.localeCompare(b));
+    list.innerHTML = keys.map(k=>{
+      const n=groups[k].length;
+      const head = k==="__none"
+        ? `<div class="card" style="padding:10px 12px;margin-bottom:10px;background:#fffbeb;border-color:#fde68a"><b>⚠️ Not allocated yet</b> <span class="hint">· ${n} order${n>1?"s":""} — allocate them in the Allocate tab</span></div>`
+        : `<div class="card" style="padding:10px 12px;margin-bottom:10px;background:#f0fdf4;border-color:#bbf7d0"><b>🚚 ${esc(k)}</b> <span class="hint">· ${n} order${n>1?"s":""}</span></div>`;
+      return head + groups[k].map(fcard).join("");
+    }).join("") + '<button class="btn ghost" onclick="loadFulfillList()">Refresh</button>';
   }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
@@ -482,7 +492,7 @@ function fcard(o){
   return `
   <div class="ocard" id="fcard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}</div>
+    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:' <span class="pill off">unallocated</span>'}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
@@ -754,7 +764,7 @@ async function loadAllocate(){
   const panel=document.getElementById("panel");
   panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
   try{
-    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=deliver")]);
+    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=unfulfilled")]);
     const active=(dRes.drivers||[]).filter(d=>d.active);
     const orders=oRes.orders||[];
     const el=document.getElementById("alloc");
