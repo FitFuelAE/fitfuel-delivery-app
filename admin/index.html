@@ -787,16 +787,32 @@ async function loadAllocate(){
     const el=document.getElementById("alloc");
     if(!active.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
     if(!orders.length){ el.outerHTML='<div class="empty" id="alloc">No open orders to allocate.</div>'; return; }
+    // Sort by city/emirate (then area) so same-zone orders sit together for allocation.
+    orders.sort((a,b)=> (a.city||"~").localeCompare(b.city||"~") || (a.area||"").localeCompare(b.area||"") || a.name.localeCompare(b.name));
     const opts=(sel)=>'<option value="">— Unassigned —</option>'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("");
-    el.outerHTML='<div id="alloc">'+orders.map(o=>`
+    const loc=(o)=>{
+      const cityBits=[o.city, (o.province&&o.province!==o.city)?o.province:""].filter(Boolean).join(", ");
+      return (cityBits||o.area)?`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center">
+        ${cityBits?`<span class="pill status">📍 ${esc(cityBits)}</span>`:""}
+        ${o.area?`<span class="hint" style="font-size:13.5px">${esc(o.area)}</span>`:""}
+      </div>`:"";
+    };
+    let lastCity=null;
+    el.outerHTML='<div id="alloc">'+orders.map(o=>{
+      const city=o.city||"Other";
+      const header=(city!==lastCity)?`<div class="hint" style="margin:18px 0 8px;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--green-d)">${esc(city)}</div>`:"";
+      lastCity=city;
+      return header+`
       <div class="card">
         <div class="drvtop">
           <div><div class="nm">${esc(o.name)}</div><div class="hint">${esc(o.customerName||"")}</div></div>
           <span class="pill ${o.assignedTo?'on':'off'}" id="apill-${esc(o.id)}">${o.assignedTo?esc(o.assignedTo):'unassigned'}</span>
         </div>
-        <label class="hint" style="display:block;margin-top:8px">Allocate to driver</label>
+        ${loc(o)}
+        <label class="hint" style="display:block;margin-top:10px">Allocate to driver</label>
         <select onchange="assignOrder('${esc(o.id)}', this.value)">${opts(o.assignedTo)}</select>
-      </div>`).join("")+'</div>';
+      </div>`;
+    }).join("")+'</div>';
   }catch(e){ const el=document.getElementById("alloc"); if(el) el.outerHTML='<div class="empty" id="alloc">'+esc(e.message)+'</div>'; }
 }
 
