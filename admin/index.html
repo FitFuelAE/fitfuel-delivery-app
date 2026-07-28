@@ -777,6 +777,21 @@ function delivRow(it){
 }
 
 // ---- Allocate (assign orders to drivers) ----
+// The customer-typed "city" is messy (districts, spellings). Snap each order to
+// one of the 7 UAE emirates by scanning all its address text.
+const EMIRATE_ORDER=["Dubai","Abu Dhabi","Sharjah","Ajman","Umm Al Quwain","Ras Al Khaimah","Fujairah","Other"];
+function emirateOf(o){
+  const t=((o.city||"")+" "+(o.province||"")+" "+(o.area||"")+" "+(o.address||"")).toLowerCase();
+  if(/dubai|\bdxb\b/.test(t)) return "Dubai";
+  if(/abu\s*dhabi|abudhabi|\bauh\b|reem island|yas island|khalifa city|mussafah|al ain/.test(t)) return "Abu Dhabi";
+  if(/sharjah|\bshj\b/.test(t)) return "Sharjah";
+  if(/ajman/.test(t)) return "Ajman";
+  if(/umm[\s-]*al[\s-]*qu?[a-z]+|\buaq\b/.test(t)) return "Umm Al Quwain";
+  if(/ras[\s-]*al[\s-]*khaimah|\brak\b|alrams/.test(t)) return "Ras Al Khaimah";
+  if(/fuja[ie]rah/.test(t)) return "Fujairah";
+  return "Other";
+}
+
 async function loadAllocate(){
   const panel=document.getElementById("panel");
   panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
@@ -787,8 +802,9 @@ async function loadAllocate(){
     const el=document.getElementById("alloc");
     if(!active.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
     if(!orders.length){ el.outerHTML='<div class="empty" id="alloc">No open orders to allocate.</div>'; return; }
-    // Sort by city/emirate (then area) so same-zone orders sit together for allocation.
-    orders.sort((a,b)=> (a.city||"~").localeCompare(b.city||"~") || (a.area||"").localeCompare(b.area||"") || a.name.localeCompare(b.name));
+    // Group by the 7 emirates so a driver can be assigned to a whole zone.
+    orders.forEach(o=>{ o._em=emirateOf(o); });
+    orders.sort((a,b)=> EMIRATE_ORDER.indexOf(a._em)-EMIRATE_ORDER.indexOf(b._em) || (a.city||"").localeCompare(b.city||"") || a.name.localeCompare(b.name));
     const opts=(sel)=>'<option value="">— Unassigned —</option>'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("");
     const loc=(o)=>{
       const cityBits=[o.city, (o.province&&o.province!==o.city)?o.province:""].filter(Boolean).join(", ");
@@ -797,11 +813,10 @@ async function loadAllocate(){
         ${o.area?`<span class="hint" style="font-size:13.5px">${esc(o.area)}</span>`:""}
       </div>`:"";
     };
-    let lastCity=null;
+    let lastEm=null;
     el.outerHTML='<div id="alloc">'+orders.map(o=>{
-      const city=o.city||"Other";
-      const header=(city!==lastCity)?`<div class="hint" style="margin:18px 0 8px;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--green-d)">${esc(city)}</div>`:"";
-      lastCity=city;
+      const header=(o._em!==lastEm)?`<div class="hint" style="margin:18px 0 8px;font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--green-d)">📍 ${esc(o._em)} <span style="opacity:.6;font-weight:600">· ${orders.filter(x=>x._em===o._em).length}</span></div>`:"";
+      lastEm=o._em;
       return header+`
       <div class="card">
         <div class="drvtop">
