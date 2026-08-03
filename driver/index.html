@@ -209,9 +209,17 @@ function card(o){
       <div class="opt">
         <button onclick="reportIssue('${esc(o.id)}','not_home')">Not home</button>
         <button onclick="reportIssue('${esc(o.id)}','rescheduled')">Reschedule</button>
-        <button onclick="reportIssue('${esc(o.id)}','refused')">Refused</button>
       </div>
       <textarea id="note-${esc(o.id)}" placeholder="Optional note (e.g. left with neighbour)"></textarea>
+    </div>
+    <button class="btn ghost" style="margin-top:10px;color:var(--amber)" onclick="toggleReturn('${esc(o.id)}')">↩ Return to store</button>
+    <div class="issues" id="ret-${esc(o.id)}">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px">Item comes back to the warehouse. Reason:</div>
+      <div class="opt">
+        <button onclick="doReturn('${esc(o.id)}','refused')">Refused</button>
+        <button onclick="doReturn('${esc(o.id)}','changed_mind')">Changed mind</button>
+        <button onclick="doReturn('${esc(o.id)}','undelivered')">Couldn't deliver</button>
+      </div>
     </div>
   </div>`;
 }
@@ -323,6 +331,18 @@ async function reportIssue(id,status){
   }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
 }
 
+function toggleReturn(id){ document.getElementById("ret-"+id).classList.toggle("open"); }
+async function doReturn(id,reason){
+  if(!confirm("Return this order to the store? It leaves your list and the warehouse will check it back in.")) return;
+  const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
+  try{
+    await api("/return",{method:"POST",body:JSON.stringify({orderGid:id,reason})});
+    toast("↩ Marked for return");
+    cardEl.style.transition="opacity .3s"; cardEl.style.opacity="0";
+    setTimeout(()=>cardEl.remove(),300);
+  }catch(e){ cardEl.classList.remove("fade"); toast(e.message); }
+}
+
 async function notifyOtw(id){
   const o=ORDERS[id]; if(!o) return;
   if(!o.phone){ toast("No phone number on this order"); return; }
@@ -338,7 +358,7 @@ async function notifyOtw(id){
 }
 
 window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=reportIssue;
-window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw; window.removePhoto=removePhoto;
+window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw; window.removePhoto=removePhoto; window.toggleReturn=toggleReturn; window.doReturn=doReturn;
 
 // ---- boot ----
 if("serviceWorker" in navigator){

@@ -203,6 +203,7 @@ function renderApp(){
     {id:"allocate", label:"1 · Allocate"},
     {id:"fulfillment", label:"2 · Fulfillment"},
     {id:"orders", label:"Orders"},
+    {id:"returns", label:"Returns"},
     {id:"summary", label:"Summary"},
     ...(isWH ? [] : [{id:"activity",label:"Activity"},{id:"drivers",label:"Drivers"},{id:"admins",label:"Admins"}]),
   ];
@@ -222,6 +223,7 @@ function renderApp(){
   root.querySelectorAll(".tabs button").forEach(b=>{ b.onclick=()=>{ TAB=b.getAttribute("data-tab"); renderApp(); }; });
   startGeo();
   if(TAB==="fulfillment") loadFulfillment();
+  else if(TAB==="returns") loadReturns();
   else if(TAB==="orders") loadOrders();
   else if(TAB==="allocate") loadAllocate();
   else if(TAB==="drivers") loadDrivers();
@@ -546,6 +548,52 @@ async function notifyShipped(id){
 }
 
 window.loadFulfillList=loadFulfillList; window.fulfilOrder=fulfilOrder; window.notifyShipped=notifyShipped;
+
+// ---- Returns (items coming back from drivers) ----
+const RETURN_LABEL={cancelled:"Order cancelled",refused:"Refused",changed_mind:"Changed mind",undelivered:"Couldn't deliver",returned:"Returned"};
+async function loadReturns(){
+  document.getElementById("panel").innerHTML=`
+    <p class="hint" style="margin:0 0 12px">Items coming back from drivers — cancelled orders, refusals and undelivered goods. Check each one in when it physically arrives at the warehouse.</p>
+    <div id="rlist"><div class="loading">Loading…</div></div>`;
+  await loadReturnList();
+}
+async function loadReturnList(){
+  const list=document.getElementById("rlist");
+  try{
+    const {orders}=await api("/orders?scope=returns");
+    if(!orders.length){ list.innerHTML='<div class="empty">🎉 Nothing to receive back.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadReturnList()">Refresh</button></div>'; return; }
+    const groups={};
+    for(const o of orders){ const k=o.assignedTo||"__none"; (groups[k]=groups[k]||[]).push(o); }
+    const keys=Object.keys(groups).sort((a,b)=> a==="__none"?1 : b==="__none"?-1 : a.localeCompare(b));
+    list.innerHTML=keys.map(k=>{
+      const n=groups[k].length;
+      const label=k==="__none"?`⚠️ Unassigned <span class="cnt">· ${n}</span>`:`🚚 ${esc(k)} <span class="cnt">· ${n} item${n>1?"s":""}</span>`;
+      return `<details class="grp${k==="__none"?" warn":""}" open><summary>${label}</summary>${groups[k].map(rcard).join("")}</details>`;
+    }).join("")+'<button class="btn ghost" onclick="loadReturnList()">Refresh</button>';
+  }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+function rcard(o){
+  return `
+  <div class="ocard" id="rcard-${esc(o.id)}">
+    <div class="otop"><div class="onum">${esc(o.name)}</div><span class="pill off">${esc(RETURN_LABEL[o.returnReason]||o.returnReason||"returned")}</span></div>
+    <div class="owho">${esc(o.customerName)}</div>
+    <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
+    <div class="oactions">
+      <button class="btn" id="rc-${esc(o.id)}" onclick="receiveReturn('${esc(o.id)}')">✓ Received back</button>
+    </div>
+  </div>`;
+}
+async function receiveReturn(id){
+  const btn=document.getElementById("rc-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
+  const el=document.getElementById("rcard-"+id); if(el) el.classList.add("fade");
+  try{
+    await api("/admin/return-received",{method:"POST",body:JSON.stringify({orderGid:id})});
+    toast("✓ Received back");
+    if(el){ el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300); }
+  }catch(e){ if(el) el.classList.remove("fade"); if(btn){ btn.disabled=false; btn.textContent="✓ Received back"; } toast(e.message); }
+}
+window.loadReturns=loadReturns; window.loadReturnList=loadReturnList; window.receiveReturn=receiveReturn;
 
 async function loadOrders(){
   document.getElementById("panel").innerHTML='<div class="loading" id="olist">Loading orders…</div>';
