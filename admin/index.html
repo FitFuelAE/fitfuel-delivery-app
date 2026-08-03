@@ -515,7 +515,9 @@ function fcard(o){
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     <div class="oactions">
-      <button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>
+      ${o.assignedTo
+        ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>`
+        : `<button class="btn" disabled title="Allocate this order to a driver first">Allocate first</button>`}
       <button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>
     </div>
   </div>`;
