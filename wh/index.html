@@ -617,8 +617,8 @@ function ocard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
   return `
   <div class="ocard" id="ocard-${esc(o.id)}">
-    <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}${o.assignedTo?` <span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:' <span class="pill off">unallocated</span>'}</div>
+    <div class="otop"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="onum">${esc(o.name)}</div>${o.assignedTo?`<span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:`<span class="pill off">unallocated</span>`}</div><div class="ototal">${esc(o.total)}</div></div>
+    <div class="owho">${esc(o.customerName)}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
