@@ -618,7 +618,7 @@ function ocard(o){
   return `
   <div class="ocard" id="ocard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}</div>
+    <div class="owho">${esc(o.customerName)}${o.assignedTo?` <span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:' <span class="pill off">unallocated</span>'}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
