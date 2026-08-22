@@ -827,16 +827,21 @@ function delivRow(it){
 // ---- Allocate (assign orders to drivers) ----
 // The customer-typed "city" is messy (districts, spellings). Snap each order to
 // one of the 7 UAE emirates by scanning all its address text.
-const EMIRATE_ORDER=["Dubai","Abu Dhabi","Sharjah","Ajman","Umm Al Quwain","Ras Al Khaimah","Fujairah","Other"];
+const EMIRATE_ORDER=["Dubai","Abu Dhabi","Al Ain","Sharjah","Ajman","Umm Al Quwain","Ras Al Khaimah","Fujairah","Other"];
 function emirateOf(o){
-  const t=((o.city||"")+" "+(o.province||"")+" "+(o.area||"")+" "+(o.address||"")).toLowerCase();
-  if(/dubai|\bdxb\b/.test(t)) return "Dubai";
-  if(/abu\s*dhabi|abudhabi|\bauh\b|reem island|yas island|khalifa city|mussafah|al ain/.test(t)) return "Abu Dhabi";
-  if(/sharjah|\bshj\b/.test(t)) return "Sharjah";
-  if(/ajman/.test(t)) return "Ajman";
-  if(/umm[\s-]*al[\s-]*qu?[a-z]+|\buaq\b/.test(t)) return "Umm Al Quwain";
-  if(/ras[\s-]*al[\s-]*khaimah|\brak\b|alrams/.test(t)) return "Ras Al Khaimah";
-  if(/fuja[ie]rah/.test(t)) return "Fujairah";
+  const city=((o.city||"")+" "+(o.province||"")).toLowerCase();          // administrative fields
+  const full=(city+" "+(o.area||"")+" "+(o.address||"")).toLowerCase();
+  if(/dubai|\bdxb\b/.test(full)) return "Dubai";
+  // Al Ain is part of Abu Dhabi emirate but a separate delivery zone. Detect from the
+  // CITY field (reliable) or distinctive Al Ain districts — NOT "Al Ain" in a street/
+  // building name (e.g. "Al Ain Tower" is actually in Abu Dhabi city).
+  if(/\bal[\s-]*ain\b|alain/.test(city) || /al\s*jimi|al\s*muwaiji|\bzakher\b|falaj\s*hazz|al\s*mutarad|al\s*towayya|al\s*jahili|al\s*qattara|al\s*yahar|al\s*maqam/.test(full)) return "Al Ain";
+  if(/abu\s*dhabi|abudhabi|\bauh\b|reem island|yas island|khalifa city|mussafah/.test(full)) return "Abu Dhabi";
+  if(/sharjah|\bshj\b/.test(full)) return "Sharjah";
+  if(/ajman/.test(full)) return "Ajman";
+  if(/umm[\s-]*al[\s-]*qu?[a-z]+|\buaq\b/.test(full)) return "Umm Al Quwain";
+  if(/ras[\s-]*al[\s-]*khaimah|\brak\b|alrams/.test(full)) return "Ras Al Khaimah";
+  if(/fuja[ie]rah/.test(full)) return "Fujairah";
   return "Other";
 }
 
