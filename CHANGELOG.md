@@ -1,9 +1,6 @@
 # FitFuel Delivery — changelog
 
 Version scheme: `YYYY-MM-DD.N` (date + same-day counter), the same as the
-## v2026-09-13.5
-- All pages carry `noindex` (root launcher and driver were missing it) so the staff apps never appear in search engines.
-
 wholesale app. Before every push that changes an app:
 
 ```bash
@@ -13,6 +10,10 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 …then add an entry here. Each app's header shows its running version
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
+
+## v2026-09-13.5
+- All pages carry `noindex` (the root launcher and driver app were missing it),
+  so the staff apps never appear in search engines.
 
 ## v2026-09-13.4
 - **Cash tab** (new `cash` right): driver cash on hand — collected minus handed
