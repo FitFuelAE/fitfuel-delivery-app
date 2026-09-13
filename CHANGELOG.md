@@ -11,6 +11,9 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-09-13.8
+- The send-test-WhatsApp card is master-only (server-enforced too).
+
 ## v2026-09-13.7
 - People tab: Send-a-test-WhatsApp card (staff.manage edit) — fires the courier
   "on its way" template with sample tracking link to any number you type.
