@@ -147,7 +147,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.6";
+const APP_VERSION = "2026-09-13.7";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -517,7 +517,15 @@ async function loadPeople(){
       <div class="err" id="aerr"></div>
     </div>`:""}
     <p class="hint" style="margin:0 0 10px"><b>Read</b> look only · <b>Write</b> the everyday work · <b>Edit</b> also undo what has already happened — disable an account, change someone's rights. Changes apply the next time the person signs in.</p>
-    <div id="plist"><div class="loading">Loading…</div></div>`;
+    <div id="plist"><div class="loading">Loading…</div></div>
+    ${canEdit?`<div class="card">
+      <h3>Send a test WhatsApp</h3>
+      <p class="hint">Sends the courier-style "on its way" message (approved template, sample tracking link + COD line) so you can see exactly what customers receive.</p>
+      <div style="display:flex;gap:8px">
+        <input id="watest" placeholder="+9715…" inputmode="tel" style="flex:1" onkeydown="if(event.key==='Enter')waTest()" />
+        <button class="btn sm" onclick="waTest()" style="padding:12px 16px">📲 Send test</button>
+      </div>
+    </div>`:""}`;
   if(canWrite) document.getElementById("addadmin").onclick=addPerson;
 
   try{
@@ -647,6 +655,16 @@ async function deleteAdmin(username){
 window.resetPin=resetPin; window.toggleDriver=toggleDriver; window.editDriver=editDriver;
 window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin; window.editAdmin=editAdmin;
 window.saveRights=saveRights;
+
+async function waTest(){
+  const phone=((document.getElementById("watest")||{}).value||"").trim();
+  if(phone.replace(/\D/g,"").length<9){ toast("Enter a full phone number"); return; }
+  try{
+    const r=await api("/admin/wa-test",{method:"POST",body:JSON.stringify({phone})});
+    toast(r.ok?"📲 Sent — check that phone's WhatsApp":(r.error||"Couldn't send"));
+  }catch(e){ toast(e.message); }
+}
+window.waTest=waTest;
 
 // ---- Orders (same view drivers get: see / fulfill / report issues) ----
 // ---- Fulfillment (warehouse: verify the pick, then dispatch) ----
