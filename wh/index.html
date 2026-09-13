@@ -147,7 +147,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.2";
+const APP_VERSION = "2026-09-13.3";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -630,13 +630,20 @@ async function loadFulfillList(){
 function fcard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
   const isCarrier=isCarrierAssignee(o.assignedTo);
-  // Carrier orders: "Book shipment" creates the courier AWB (label printable) with
-  // no fulfilment or customer message; "Courier collected" is the actual dispatch.
-  const secondBtn = isCarrier
-    ? (o.bookedAwb
+  // Carrier orders read left-to-right as the physical flow: book the shipment
+  // first (creates the AWB — no fulfilment, no customer message), then hand over.
+  // "Courier collected" stays greyed until the booking exists.
+  const actionsHtml = isCarrier
+    ? `${o.bookedAwb
         ? `<button class="btn ghost" id="fl-${esc(o.id)}" onclick="printLabel('${esc(o.id)}')">🖨 Label</button>`
-        : `<button class="btn ghost" id="fb-${esc(o.id)}" onclick="bookCarrier('${esc(o.id)}')">📦 Book shipment</button>`)
-    : `<button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>`;
+        : `<button class="btn" id="fb-${esc(o.id)}" onclick="bookCarrier('${esc(o.id)}')">📦 Book shipment</button>`}
+      <button class="btn${o.bookedAwb?"":" ghost"}" id="ff-${esc(o.id)}" ${o.bookedAwb
+        ? `onclick="fulfilOrder('${esc(o.id)}')"`
+        : 'disabled title="Book the shipment with TFM first"'}>✓ Courier collected</button>`
+    : `${o.assignedTo
+        ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>`
+        : `<button class="btn" disabled title="Allocate this order to a driver or courier first">Allocate first</button>`}
+      <button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>`;
   return `
   <div class="ocard" id="fcard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
@@ -645,12 +652,7 @@ function fcard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    ${rightAtLeast("fulfilment") ? `<div class="oactions">
-      ${o.assignedTo
-        ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">${isCarrier?"✓ Courier collected":"✓ Fulfilled"}</button>`
-        : `<button class="btn" disabled title="Allocate this order to a driver or courier first">Allocate first</button>`}
-      ${secondBtn}
-    </div>` : ""}
+    ${rightAtLeast("fulfilment") ? `<div class="oactions">${actionsHtml}</div>` : ""}
   </div>`;
 }
 

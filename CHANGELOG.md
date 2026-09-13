@@ -11,6 +11,11 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-09-13.3
+- Fulfillment, courier cards: buttons now read left-to-right as the physical
+  flow — **📦 Book shipment** on the left, **✓ Courier collected** on the right,
+  greyed out until the shipment is booked.
+
 ## v2026-09-13.2
 - **Per-user rights**, same model as the wholesale app: the Admins tab is now
   **People** — every staff account gets capability rows (Allocate orders,
