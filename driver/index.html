@@ -83,7 +83,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.3";
+const APP_VERSION = "2026-09-13.4";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_token") || "";
 let NAME = localStorage.getItem("ff_name") || "";
@@ -161,12 +161,31 @@ async function renderOrders(){
   root.innerHTML = `
    <header>
      <div><h1>Deliveries</h1><div class="sub">${esc(NAME)} · v${APP_VERSION}</div></div>
-     <button id="logout">Log out</button>
+     <div style="display:flex;gap:8px">
+       <button id="bell" title="Notifications">🔔</button>
+       <button id="logout">Log out</button>
+     </div>
    </header>
-   <div class="wrap"><div class="loading" id="list">Loading orders…</div></div>`;
+   <div class="wrap"><div id="myday"></div><div class="loading" id="list">Loading orders…</div></div>`;
   document.getElementById("logout").onclick=logout;
+  initBell();
+  pushResync();
+  loadMyDay();
   startGeo();
   await loadList();
+}
+
+// The driver's own day at a glance — deliveries done and cash to hand in.
+async function loadMyDay(){
+  const el=document.getElementById("myday"); if(!el) return;
+  try{
+    const d=await api("/my-day");
+    const money=(n)=>(Math.round(Number(n||0)*100)/100).toFixed(2);
+    el.innerHTML=`<div class="card" style="display:flex;justify-content:space-between;gap:6px 14px;flex-wrap:wrap;align-items:baseline">
+      <div><b>Today:</b> ${d.today.delivered} delivered · ${money(d.today.cash)} collected</div>
+      <div>💵 Cash with you: <span style="font-weight:800">${money(d.holding)} AED</span></div>
+    </div>`;
+  }catch{ el.innerHTML=""; }
 }
 
 let ORDERS={};
@@ -314,6 +333,7 @@ async function confirmFulfill(id){
     if(r&&r.paymentWarning) warns.push("payment not marked: "+r.paymentWarning);
     if(r&&r.deliveryWarning) warns.push("not marked delivered: "+r.deliveryWarning);
     toast(warns.length ? ("✓ Delivered — "+warns.join(" · ")) : "✓ Delivered");
+    loadMyDay();
     delete PHOTOS[id];
     cardEl.style.transition="opacity .3s,height .3s"; cardEl.style.opacity="0";
     setTimeout(()=>cardEl.remove(),300);
@@ -362,6 +382,67 @@ window.loadList=loadList; window.toggleIssue=toggleIssue; window.reportIssue=rep
 window.toggleFulfill=toggleFulfill; window.onPhoto=onPhoto; window.confirmFulfill=confirmFulfill; window.notifyOtw=notifyOtw; window.removePhoto=removePhoto; window.toggleReturn=toggleReturn; window.doReturn=doReturn;
 
 // ---- boot ----
+// ---- push notifications (ported from the wholesale app) --------------------
+// Permission is asked for from the bell tap, never on load. Once granted, the
+// device re-registers quietly on every open — browsers retire subscriptions
+// without telling anyone, and a dead endpoint means silent missed alerts.
+const PUSH_APP="driver";
+function pushSupported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+async function pushState(){
+  if(!pushSupported()) return "unsupported";
+  if(Notification.permission==="denied") return "blocked";
+  const reg=await navigator.serviceWorker.ready;
+  return (await reg.pushManager.getSubscription()) ? "on" : "off";
+}
+function vapidBytes(key){ return Uint8Array.from(atob(key.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)); }
+async function pushResync(){
+  try{
+    if(!pushSupported()||Notification.permission!=="granted") return;
+    const {key,enabled}=await api("/push/key");
+    if(!enabled||!key) return;
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription()
+      || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(key)});
+    await api("/push/subscribe",{method:"POST",body:JSON.stringify({app:PUSH_APP,subscription:sub.toJSON()})});
+  }catch{ /* a device that cannot re-register must not fail boot */ }
+}
+async function setBell(){
+  const b=document.getElementById("bell"); if(!b) return;
+  const s=await pushState().catch(()=>"unsupported");
+  b.textContent = s==="on" ? "🔔" : "🔕";
+  b.style.opacity = s==="on" ? "1" : ".55";
+  b.title = s==="on" ? "Notifications on — tap to turn off"
+    : s==="blocked" ? "Notifications blocked in your browser settings"
+    : s==="unsupported" ? "Add this app to your Home Screen to enable notifications"
+    : "Tap to turn on notifications";
+}
+async function toggleBell(){
+  const s=await pushState().catch(()=>"unsupported");
+  try{
+    if(s==="unsupported"){ toast(/iPad|iPhone|iPod/.test(navigator.userAgent)?"Add this app to your Home Screen first — iPhone only allows alerts for installed apps":"Notifications aren't supported in this browser"); return; }
+    if(s==="blocked"){ toast("Blocked in your browser settings — turn them back on there"); return; }
+    if(s==="on"){
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.getSubscription();
+      if(sub){ await api("/push/unsubscribe",{method:"POST",body:JSON.stringify({endpoint:sub.endpoint})}).catch(()=>{}); await sub.unsubscribe(); }
+      toast("Notifications off");
+    }else{
+      const {key,enabled}=await api("/push/key");
+      if(!enabled||!key) throw new Error("Notifications aren't switched on for this system yet");
+      const permission=await Notification.requestPermission();
+      if(permission!=="granted") throw new Error("You said no — allow notifications in your browser settings");
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.getSubscription()
+        || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(key)});
+      await api("/push/subscribe",{method:"POST",body:JSON.stringify({app:PUSH_APP,subscription:sub.toJSON()})});
+      toast("🔔 On — sending a test notification…");
+      api("/push/test",{method:"POST",body:"{}"}).catch(()=>{});
+    }
+  }catch(e){ toast(e.message); }
+  setBell();
+}
+function initBell(){ const b=document.getElementById("bell"); if(b){ b.onclick=toggleBell; setBell(); } }
+
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js").catch(()=>{});
 }

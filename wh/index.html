@@ -147,7 +147,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.3";
+const APP_VERSION = "2026-09-13.4";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -250,6 +250,7 @@ function renderApp(){
     ...(hasCap("fulfilment")    ? [{id:"fulfillment", label:"2 · Fulfillment"}] : []),
     ...(hasCap("deliveries")    ? [{id:"orders",      label:"Orders"}]          : []),
     ...(hasCap("returns")       ? [{id:"returns",     label:"Returns"}]         : []),
+    ...(hasCap("cash")          ? [{id:"cash",        label:"Cash"}]            : []),
     ...(hasCap("summary")       ? [{id:"summary",     label:"Summary"}]         : []),
     ...(hasCap("activity")      ? [{id:"activity",    label:"Activity"}]        : []),
     ...(hasCap("drivers.manage")? [{id:"drivers",     label:"Drivers"}]         : []),
@@ -258,7 +259,10 @@ function renderApp(){
   root.innerHTML = `
    <header>
      <div><h1>${IS_WH_APP?"FitFuel Warehouse":"FitFuel Admin"}</h1><div class="sub">${esc(NAME)} · v${APP_VERSION}</div></div>
-     <button id="logout">Log out</button>
+     <div style="display:flex;gap:8px">
+       <button id="bell" title="Notifications">🔔</button>
+       <button id="logout">Log out</button>
+     </div>
    </header>
    <div class="wrap">
      <div class="tabs">
@@ -267,6 +271,8 @@ function renderApp(){
      <div id="panel"><div class="loading">Loading…</div></div>
    </div>`;
   document.getElementById("logout").onclick=logout;
+  initBell();
+  if(!PUSH_SYNCED){ PUSH_SYNCED=true; pushResync(); }
   if(!TABS.length){
     document.getElementById("panel").innerHTML =
       '<div class="empty">This account has no rights yet.<br>Ask an admin to grant them in People, then sign in again.</div>';
@@ -282,6 +288,7 @@ function renderApp(){
   else if(TAB==="allocate") loadAllocate();
   else if(TAB==="drivers") loadDrivers();
   else if(TAB==="people") loadPeople();
+  else if(TAB==="cash") loadCash();
   else if(TAB==="summary") loadSummary();
   else loadActivity();
 }
@@ -382,10 +389,19 @@ async function toggleDriver(username,active){
   }catch(e){ toast(e.message); }
 }
 
-// ---- Activity ----
+// ---- Activity (log + order lookup) ----
 async function loadActivity(){
   const panel=document.getElementById("panel");
   panel.innerHTML = `<div class="card">
+      <h3>Find an order</h3>
+      <p class="hint">Search by order number (e.g. FF2037) — the full attempt history with proof photos.</p>
+      <div style="display:flex;gap:8px">
+        <input id="lkq" placeholder="#FF…" style="flex:1" autocapitalize="none" onkeydown="if(event.key==='Enter')lookupOrder()" />
+        <button class="btn sm" onclick="lookupOrder()" style="padding:12px 16px">Search</button>
+      </div>
+      <div id="lkres"></div>
+    </div>
+    <div class="card">
       <h3>Delivery activity</h3>
       <p class="hint">Most recent 200 fulfilment / issue actions by drivers.</p>
       <div class="scroll" id="alist"><div class="loading">Loading…</div></div>
@@ -400,6 +416,43 @@ async function loadActivity(){
       </tr></thead><tbody>${activity.map(activityRow).join("")}</tbody></table>`;
   }catch(e){ document.getElementById("alist").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
+
+async function lookupOrder(){
+  const q=((document.getElementById("lkq")||{}).value||"").trim();
+  const res=document.getElementById("lkres"); if(!res) return;
+  if(q.length<2){ toast("Type at least 2 characters"); return; }
+  res.innerHTML='<div class="loading" style="padding:16px">Searching…</div>';
+  try{
+    const {orders}=await api("/admin/order-lookup?q="+encodeURIComponent(q));
+    if(!orders.length){ res.innerHTML='<div class="hint" style="padding:10px 0">Nothing found for “'+esc(q)+'”.</div>'; return; }
+    res.innerHTML=orders.map(o=>{
+      const dsp=o.dispatch;
+      const state = dsp
+        ? (dsp.return_status==="pending"
+            ? `↩ returning${dsp.return_reason?` (${esc(dsp.return_reason)})`:""}`
+            : dsp.carrier
+              ? `🚛 ${esc(carrierName(dsp.carrier))} · AWB ${esc(dsp.carrier_awb||"—")}${dsp.carrier_status?` · ${esc(dsp.carrier_status)}`:""}`
+              : `out for delivery — dispatched by ${esc(dsp.fulfilled_by||"")}`)
+        : (o.assignedTo?`allocated to ${esc(assigneeLabel(o.assignedTo))}`:"no open dispatch");
+      return `<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;align-items:baseline">
+          <b style="font-size:16px">${esc(o.name)}</b><span class="hint">${state}</span>
+        </div>
+        ${o.events.map(ev=>`<div class="deliv">
+          ${(ev.photoUrls||[]).length
+            ? ev.photoUrls.map(u=>`<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" alt="proof" /></a>`).join("")
+            : `<img alt="no photo" />`}
+          <div class="meta">
+            <div class="ttl">${esc((ev.status||"").replace("_"," "))} · ${esc(displayActor(ev.by||"—"))}</div>
+            <div class="hint">${fmtTime(ev.when)}${ev.cash!=null?` · 💵 ${esc(fmtMoney(ev.cash))}`:""}${(ev.lat!=null&&ev.lng!=null)?` · <a href="https://maps.google.com/?q=${esc(ev.lat)},${esc(ev.lng)}" target="_blank">📍 GPS</a>`:""}</div>
+            ${ev.note?`<div class="hint">📝 ${esc(ev.note)}</div>`:""}
+          </div>
+        </div>`).join("")}
+      </div>`;
+    }).join("");
+  }catch(e){ res.innerHTML='<div class="hint" style="padding:10px 0">'+esc(e.message)+'</div>'; }
+}
+window.lookupOrder=lookupOrder;
 
 function activityRow(a){
   return `<tr>
@@ -417,6 +470,7 @@ const CAP_LABELS = {
   "fulfilment":     "Fulfillment & dispatch",
   "deliveries":     "Delivery queue",
   "returns":        "Returns",
+  "cash":           "Cash — handovers & courier COD",
   "summary":        "End-of-day summary",
   "activity":       "Activity log",
   "drivers.manage": "Manage drivers",
@@ -767,6 +821,79 @@ async function receiveReturn(id){
 }
 window.loadReturns=loadReturns; window.loadReturnList=loadReturnList; window.receiveReturn=receiveReturn;
 
+// ---- Cash (driver handovers + courier COD settlement) ----
+async function loadCash(){
+  const canWrite=rightAtLeast("cash","write");
+  const panel=document.getElementById("panel");
+  panel.innerHTML='<div class="loading" id="cashbody">Loading…</div>';
+  try{
+    const d=await api("/admin/cash");
+    const drvRows=(d.balances||[]).map(b=>`<tr>
+        <td><strong>${esc(b.username)}</strong><div class="hint">${esc(b.name)}</div></td>
+        <td>${esc(fmtMoney(b.collected))}</td>
+        <td>${esc(fmtMoney(b.handedOver))}</td>
+        <td style="font-weight:800${b.holding>0.009?';color:var(--amber)':''}">${esc(fmtMoney(b.holding))}</td>
+        <td>${canWrite?`<div style="display:flex;gap:6px"><input id="ho-${esc(b.username)}" type="number" inputmode="decimal" step="0.01" placeholder="amount" style="width:110px;padding:8px;font-size:14px" value="${b.holding>0.009?esc(fmtMoney(b.holding)):""}" /><button class="btn sm" onclick="recordHandover('${esc(b.username)}')">💵 Received</button></div>`:""}</td>
+      </tr>`).join("");
+    const pending=d.courierPending||[];
+    const pendRows=pending.map(p=>`<tr>
+        <td>${canWrite?`<input type="checkbox" class="codck" data-gid="${esc(p.order_gid)}" data-amt="${p.amount}" onchange="codTotal()" />`:""}</td>
+        <td><strong>${esc(p.order_name||"")}</strong><div class="hint">AWB ${esc(p.awb||"—")}</div></td>
+        <td>${esc((p.delivered_at||"").slice(0,10))}</td>
+        <td style="font-weight:700">${esc(fmtMoney(p.amount))} ${esc(p.currency)}</td>
+      </tr>`).join("");
+    const settledRows=(d.courierSettled||[]).map(p=>
+      `<div class="hint" style="padding:4px 0">${esc(p.order_name||"")} · ${esc(fmtMoney(p.amount))} ${esc(p.currency)} · settled ${fmtTime(p.settled_at)} by ${esc(p.settled_by||"")}${p.reference?` · ${esc(p.reference)}`:""}</div>`).join("");
+    const hoRows=(d.handovers||[]).map(h=>
+      `<div class="hint" style="padding:4px 0">💵 ${esc(fmtMoney(h.amount))} from <b>${esc(h.driver_username)}</b> → ${esc(h.received_by)} · ${fmtTime(h.created_at)}${h.note?` · ${esc(h.note)}`:""}</div>`).join("");
+    document.getElementById("cashbody").outerHTML=`<div id="cashbody">
+      <div class="card">
+        <h3>Driver cash on hand</h3>
+        <p class="hint">Collected (since ${esc(d.since)}) minus what was handed to the office.${canWrite?" Check the amount, then press 💵 Received when the cash is in your hand.":""}</p>
+        <div class="scroll"><table><thead><tr><th>Driver</th><th>Collected</th><th>Handed over</th><th>Holding</th><th></th></tr></thead><tbody>${drvRows}</tbody></table></div>
+      </div>
+      <div class="card">
+        <h3>Courier COD — waiting for remittance</h3>
+        <p class="hint">Cash TFM collected from customers and still holds. When a remittance arrives, tick the orders it covers${canWrite?" and mark them settled — they are marked paid in Shopify too":""}.</p>
+        ${pending.length?`<div class="scroll"><table><thead><tr><th></th><th>Order</th><th>Delivered</th><th>Amount</th></tr></thead><tbody>${pendRows}</tbody></table></div>
+        ${canWrite?`<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
+          <b id="codsum">0.00 selected</b>
+          <input id="codref" placeholder="remittance reference (optional)" style="flex:1;min-width:160px;padding:9px 12px;font-size:14px" />
+          <button class="btn sm" onclick="settleCod()">✓ Settled — mark paid</button>
+        </div>`:""}`:'<div class="hint">Nothing pending — the courier holds no cash right now.</div>'}
+        ${settledRows?`<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px"><div class="hint" style="font-weight:700">Recently settled</div>${settledRows}</div>`:""}
+      </div>
+      <div class="card"><h3>Recent handovers</h3>${hoRows||'<div class="hint">None yet.</div>'}</div>
+    </div>`;
+  }catch(e){ const el=document.getElementById("cashbody"); if(el) el.outerHTML='<div class="empty" id="cashbody">'+esc(e.message)+'</div>'; }
+}
+function codTotal(){
+  const sum=[...document.querySelectorAll(".codck:checked")].reduce((s,c)=>s+Number(c.dataset.amt||0),0);
+  const el=document.getElementById("codsum"); if(el) el.textContent=fmtMoney(sum)+" selected";
+}
+async function recordHandover(u){
+  const inp=document.getElementById("ho-"+u);
+  const amount=Number(inp&&inp.value);
+  if(!Number.isFinite(amount)||amount<=0){ toast("Enter the amount received"); return; }
+  if(!confirm("Confirm you received "+fmtMoney(amount)+" AED in cash from "+u+"?")) return;
+  try{
+    await api("/admin/cash-received",{method:"POST",body:JSON.stringify({driverUsername:u,amount})});
+    toast("💵 Recorded"); loadCash();
+  }catch(e){ toast(e.message); }
+}
+async function settleCod(){
+  const gids=[...document.querySelectorAll(".codck:checked")].map(c=>c.dataset.gid);
+  if(!gids.length){ toast("Tick the orders the remittance covers"); return; }
+  const reference=(document.getElementById("codref")||{}).value||"";
+  if(!confirm("Mark "+gids.length+" order(s) as settled and paid in Shopify?")) return;
+  try{
+    const r=await api("/admin/cod-settle",{method:"POST",body:JSON.stringify({orderGids:gids,reference})});
+    toast(r.warnings&&r.warnings.length?("✓ Settled "+r.settled+" — ⚠️ "+r.warnings[0]):("✓ Settled "+r.settled+" order(s)"));
+    loadCash();
+  }catch(e){ toast(e.message); }
+}
+window.loadCash=loadCash; window.recordHandover=recordHandover; window.settleCod=settleCod; window.codTotal=codTotal;
+
 async function loadOrders(){
   document.getElementById("panel").innerHTML='<div class="loading" id="olist">Loading orders…</div>';
   await loadOrderList();
@@ -1074,6 +1201,69 @@ async function assignOrder(orderGid, driverUsername){
   }catch(e){ toast(e.message); }
 }
 window.assignOrder=assignOrder;
+
+// ---- push notifications (ported from the wholesale app) --------------------
+// Permission is asked for from the bell tap, never on load. Once granted, the
+// device re-registers quietly on every open — browsers retire subscriptions
+// without telling anyone, and a dead endpoint means silent missed alerts.
+const PUSH_APP = IS_WH_APP ? "wh" : "admin";
+let PUSH_SYNCED = false;
+function pushSupported(){ return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window; }
+async function pushState(){
+  if(!pushSupported()) return "unsupported";
+  if(Notification.permission==="denied") return "blocked";
+  const reg=await navigator.serviceWorker.ready;
+  return (await reg.pushManager.getSubscription()) ? "on" : "off";
+}
+function vapidBytes(key){ return Uint8Array.from(atob(key.replace(/-/g,"+").replace(/_/g,"/")),c=>c.charCodeAt(0)); }
+async function pushResync(){
+  try{
+    if(!pushSupported()||Notification.permission!=="granted") return;
+    const {key,enabled}=await api("/push/key");
+    if(!enabled||!key) return;
+    const reg=await navigator.serviceWorker.ready;
+    const sub=await reg.pushManager.getSubscription()
+      || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(key)});
+    await api("/push/subscribe",{method:"POST",body:JSON.stringify({app:PUSH_APP,subscription:sub.toJSON()})});
+  }catch{ /* a device that cannot re-register must not fail boot */ }
+}
+async function setBell(){
+  const b=document.getElementById("bell"); if(!b) return;
+  const s=await pushState().catch(()=>"unsupported");
+  b.textContent = s==="on" ? "🔔" : "🔕";
+  b.style.opacity = s==="on" ? "1" : ".55";
+  b.title = s==="on" ? "Notifications on — tap to turn off"
+    : s==="blocked" ? "Notifications blocked in your browser settings"
+    : s==="unsupported" ? "Add this app to your Home Screen to enable notifications"
+    : "Tap to turn on notifications";
+}
+async function toggleBell(){
+  const s=await pushState().catch(()=>"unsupported");
+  try{
+    if(s==="unsupported"){ toast(/iPad|iPhone|iPod/.test(navigator.userAgent)?"Add this app to your Home Screen first — iPhone only allows alerts for installed apps":"Notifications aren't supported in this browser"); return; }
+    if(s==="blocked"){ toast("Blocked in your browser settings — turn them back on there"); return; }
+    if(s==="on"){
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.getSubscription();
+      if(sub){ await api("/push/unsubscribe",{method:"POST",body:JSON.stringify({endpoint:sub.endpoint})}).catch(()=>{}); await sub.unsubscribe(); }
+      toast("Notifications off");
+    }else{
+      const {key,enabled}=await api("/push/key");
+      if(!enabled||!key) throw new Error("Notifications aren't switched on for this system yet");
+      const permission=await Notification.requestPermission();
+      if(permission!=="granted") throw new Error("You said no — allow notifications in your browser settings");
+      const reg=await navigator.serviceWorker.ready;
+      const sub=await reg.pushManager.getSubscription()
+        || await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:vapidBytes(key)});
+      await api("/push/subscribe",{method:"POST",body:JSON.stringify({app:PUSH_APP,subscription:sub.toJSON()})});
+      toast("🔔 On — sending a test notification…");
+      api("/push/test",{method:"POST",body:"{}"}).catch(()=>{});
+    }
+  }catch(e){ toast(e.message); }
+  setBell();
+}
+function initBell(){ const b=document.getElementById("bell"); if(b){ b.onclick=toggleBell; setBell(); } }
+window.toggleBell=toggleBell;
 
 // ---- boot ----
 if("serviceWorker" in navigator){ navigator.serviceWorker.register("./sw.js").catch(()=>{}); }

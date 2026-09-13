@@ -11,6 +11,19 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-09-13.4
+- **Cash tab** (new `cash` right): driver cash on hand — collected minus handed
+  over, with a "💵 Received" confirm when the office takes the cash — and
+  **courier COD settlement**: tick the orders a TFM remittance covers and mark
+  them settled + paid in Shopify. Balances count from 2026-09-13.
+- **Push notifications** with a 🔔 bell in every header (admin, warehouse,
+  driver): new order → allocate holders; courier failed attempt → fulfilment
+  holders; anything coming back → returns holders; drivers get pinged when an
+  order is allocated to them. iPhone needs the app on the Home Screen.
+- **Order lookup** in Activity: search an order number for its full attempt
+  history — who, when, GPS, proof photos, current whereabouts.
+- **Driver day panel**: "Today: N delivered · X collected · 💵 cash with you".
+
 ## v2026-09-13.3
 - Fulfillment, courier cards: buttons now read left-to-right as the physical
   flow — **📦 Book shipment** on the left, **✓ Courier collected** on the right,
