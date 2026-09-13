@@ -147,7 +147,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.5";
+const APP_VERSION = "2026-09-13.6";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -181,6 +181,9 @@ function carrierName(code){ const c=CARRIERS.find(x=>x.code===code); return c?c.
 function isCarrierAssignee(a){ return !!a && a.startsWith("carrier:"); }
 // "carrier:tfm" -> "🚛 TFM Express"; "raj" -> "🚚 raj" (pills + group headers).
 function assigneeLabel(a){ return isCarrierAssignee(a) ? "🚛 "+carrierName(a.slice(8)) : "🚚 "+a; }
+// TFM's public tracker: prefills the AWB and auto-submits.
+function trackUrl(awb){ return "https://customer.tfmex.com/Skybill/TrackSkybill?awb="+encodeURIComponent(awb); }
+function awbLink(awb){ return awb ? `<a href="${esc(trackUrl(awb))}" target="_blank" style="color:inherit">${esc(awb)}</a>` : "—"; }
 // Summary/Activity rows log the bare carrier code as the actor (e.g. "tfm").
 function displayActor(u){ const c=CARRIERS.find(x=>x.code===u); return c ? "🚛 "+c.name : u; }
 
@@ -431,7 +434,7 @@ async function lookupOrder(){
         ? (dsp.return_status==="pending"
             ? `↩ returning${dsp.return_reason?` (${esc(dsp.return_reason)})`:""}`
             : dsp.carrier
-              ? `🚛 ${esc(carrierName(dsp.carrier))} · AWB ${esc(dsp.carrier_awb||"—")}${dsp.carrier_status?` · ${esc(dsp.carrier_status)}`:""}`
+              ? `🚛 ${esc(carrierName(dsp.carrier))} · AWB ${awbLink(dsp.carrier_awb)}${dsp.carrier_status?` · ${esc(dsp.carrier_status)}`:""}`
               : `out for delivery — dispatched by ${esc(dsp.fulfilled_by||"")}`)
         : (o.assignedTo?`allocated to ${esc(assigneeLabel(o.assignedTo))}`:"no open dispatch");
       return `<div style="border-top:1px solid var(--line);margin-top:12px;padding-top:10px">
@@ -701,7 +704,7 @@ function fcard(o){
   return `
   <div class="ocard" id="fcard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${esc(o.bookedAwb)}</span>`:''}</div>
+    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${awbLink(o.bookedAwb)}</span>`:''}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
@@ -838,7 +841,7 @@ async function loadCash(){
     const pending=d.courierPending||[];
     const pendRows=pending.map(p=>`<tr>
         <td>${canWrite?`<input type="checkbox" class="codck" data-gid="${esc(p.order_gid)}" data-amt="${p.amount}" onchange="codTotal()" />`:""}</td>
-        <td><strong>${esc(p.order_name||"")}</strong><div class="hint">AWB ${esc(p.awb||"—")}</div></td>
+        <td><strong>${esc(p.order_name||"")}</strong><div class="hint">AWB ${awbLink(p.awb)}</div></td>
         <td>${esc((p.delivered_at||"").slice(0,10))}</td>
         <td style="font-weight:700">${esc(fmtMoney(p.amount))} ${esc(p.currency)}</td>
       </tr>`).join("");
@@ -917,7 +920,7 @@ function ocard(o){
   <div class="ocard" id="ocard-${esc(o.id)}">
     <div class="otop"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="onum">${esc(o.name)}</div>${o.assignedTo?`<span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:`<span class="pill off">unallocated</span>`}</div><div class="ototal">${esc(o.total)}</div></div>
     <div class="owho">${esc(o.customerName)}</div>
-    ${o.carrier?`<div class="hint" style="margin-top:8px">🚛 ${esc(carrierName(o.carrier))} · AWB ${esc(o.awb||"—")}${o.carrierStatus?` · ${esc(o.carrierStatus)}`:""} — updates automatically as the courier reports</div>`:""}
+    ${o.carrier?`<div class="hint" style="margin-top:8px">🚛 ${esc(carrierName(o.carrier))} · AWB ${awbLink(o.awb)}${o.carrierStatus?` · ${esc(o.carrierStatus)}`:""} — updates automatically as the courier reports</div>`:""}
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}

@@ -11,6 +11,11 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-09-13.6
+- Every AWB shown in the console (Fulfillment pill, Orders queue, Cash tab,
+  order lookup) now links straight to TFM's live tracker. Customers get the
+  same link via Shopify's "Track shipment" button from this release's backend.
+
 ## v2026-09-13.5
 - All pages carry `noindex` (the root launcher and driver app were missing it),
   so the staff apps never appear in search engines.
