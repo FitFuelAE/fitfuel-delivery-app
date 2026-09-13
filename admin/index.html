@@ -118,6 +118,21 @@
   details.grp > summary .cnt { font-weight:600; color:var(--muted); font-size:13px; }
   details.grp.warn > summary { background:#fffbeb; border-color:#fde68a; }
 
+  /* People & rights matrix */
+  details.pcard > summary { list-style:none; cursor:pointer; display:flex; justify-content:space-between;
+    gap:10px; align-items:baseline; flex-wrap:wrap; user-select:none; }
+  details.pcard > summary::-webkit-details-marker { display:none; }
+  details.pcard[open] > summary { margin-bottom:10px; }
+  .caprow { display:flex; align-items:center; justify-content:space-between; gap:10px;
+    padding:8px 0; border-bottom:1px dashed var(--line); flex-wrap:wrap; }
+  .caprow:last-child { border-bottom:none; }
+  .capname { font-size:14px; }
+  .levels { display:flex; border:1px solid var(--line); border-radius:10px; overflow:hidden; }
+  .levels .lvl { border:none; background:#fff; padding:8px 12px; font-size:13px; font-weight:600;
+    color:#374151; border-left:1px solid var(--line); }
+  .levels .lvl:first-child { border-left:none; }
+  .levels .lvl.on { background:var(--green); color:#fff; }
+
   .empty, .loading { text-align:center; color:var(--muted); padding:40px 16px; }
   .toast { position:fixed; left:50%; transform:translateX(-50%); bottom:24px; background:#111827; color:#fff;
     padding:12px 18px; border-radius:999px; font-size:14px; z-index:50; opacity:0; transition:opacity .2s; max-width:90%; text-align:center; }
@@ -132,15 +147,29 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.1";
+const APP_VERSION = "2026-09-13.2";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
 let ME = localStorage.getItem("ff_admin_user") || "";
 let ME_MASTER = localStorage.getItem("ff_admin_master") === "1";
-let ME_WAREHOUSE = localStorage.getItem("ff_admin_wh") === "1";
+let ME_CAPS = [], ME_RIGHTS = {};
+try { ME_CAPS = JSON.parse(localStorage.getItem("ff_admin_caps") || "[]"); } catch {}
+try { ME_RIGHTS = JSON.parse(localStorage.getItem("ff_admin_rights") || "{}"); } catch {}
 let TAB = "allocate";   // land on step 1 of the workflow
 let DRIVERS = [], ADMINS = [];   // last-loaded lists, for the Edit dialogs
+
+// The wh copy of this file is byte-identical JS; branding comes from the path.
+const IS_WH_APP = location.pathname.includes("/wh/");
+
+// ---- rights (server-enforced; this only keeps never-working controls off screen) ----
+// read = look only · write = the everyday work · edit = also undo what happened.
+const RANK = { read: 1, write: 2, edit: 3 };
+const hasCap = (cap) => ME_CAPS.includes(cap);
+const rightAtLeast = (cap, level) => {
+  const have = ME_RIGHTS[cap];
+  return !!have && RANK[have] >= RANK[level || "write"];
+};
 let CARRIERS = [], CARRIERS_LOADED = false;   // 3PL couriers (allocation targets with no logins)
 
 async function ensureCarriers(){
@@ -175,7 +204,7 @@ async function api(path, opts={}) {
   return data;
 }
 
-function logout(){ TOKEN=""; NAME=""; ME=""; ME_MASTER=false; ME_WAREHOUSE=false; localStorage.removeItem("ff_admin_token"); localStorage.removeItem("ff_admin_name"); localStorage.removeItem("ff_admin_user"); localStorage.removeItem("ff_admin_master"); localStorage.removeItem("ff_admin_wh"); renderLogin(); }
+function logout(){ TOKEN=""; NAME=""; ME=""; ME_MASTER=false; ME_CAPS=[]; ME_RIGHTS={}; for(const k of ["ff_admin_token","ff_admin_name","ff_admin_user","ff_admin_master","ff_admin_wh","ff_admin_caps","ff_admin_rights"]) localStorage.removeItem(k); renderLogin(); }
 
 // ---- Login ----
 function renderLogin(){
@@ -201,8 +230,10 @@ function renderLogin(){
     go.disabled=true; go.textContent="Logging in…";
     try{
       const r = await api("/admin/login",{method:"POST",body:JSON.stringify({username,password})});
-      TOKEN=r.token; NAME=r.name||username; ME=(r.username||username).toLowerCase(); ME_MASTER=!!r.isMaster; ME_WAREHOUSE=!!r.warehouse;
-      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME); localStorage.setItem("ff_admin_user",ME); localStorage.setItem("ff_admin_master", ME_MASTER?"1":""); localStorage.setItem("ff_admin_wh", ME_WAREHOUSE?"1":"");
+      TOKEN=r.token; NAME=r.name||username; ME=(r.username||username).toLowerCase(); ME_MASTER=!!r.isMaster;
+      ME_CAPS=r.capabilities||[]; ME_RIGHTS=r.rights||{};
+      localStorage.setItem("ff_admin_token",TOKEN); localStorage.setItem("ff_admin_name",NAME); localStorage.setItem("ff_admin_user",ME); localStorage.setItem("ff_admin_master", ME_MASTER?"1":"");
+      localStorage.setItem("ff_admin_caps",JSON.stringify(ME_CAPS)); localStorage.setItem("ff_admin_rights",JSON.stringify(ME_RIGHTS));
       renderApp();
     }catch(e){ err.textContent=e.message; go.disabled=false; go.textContent="Log in"; }
   }
@@ -211,20 +242,22 @@ function renderLogin(){
 }
 
 // ---- App shell ----
+// Tabs come from the signed-in person's rights (held at read is enough to see
+// a section); the server refuses anything beyond their level regardless.
 function renderApp(){
-  const isWH = ME_WAREHOUSE;
   const TABS = [
-    {id:"allocate", label:"1 · Allocate"},
-    {id:"fulfillment", label:"2 · Fulfillment"},
-    {id:"orders", label:"Orders"},
-    {id:"returns", label:"Returns"},
-    {id:"summary", label:"Summary"},
-    ...(isWH ? [] : [{id:"activity",label:"Activity"},{id:"drivers",label:"Drivers"},{id:"admins",label:"Admins"}]),
+    ...(hasCap("allocate")      ? [{id:"allocate",    label:"1 · Allocate"}]    : []),
+    ...(hasCap("fulfilment")    ? [{id:"fulfillment", label:"2 · Fulfillment"}] : []),
+    ...(hasCap("deliveries")    ? [{id:"orders",      label:"Orders"}]          : []),
+    ...(hasCap("returns")       ? [{id:"returns",     label:"Returns"}]         : []),
+    ...(hasCap("summary")       ? [{id:"summary",     label:"Summary"}]         : []),
+    ...(hasCap("activity")      ? [{id:"activity",    label:"Activity"}]        : []),
+    ...(hasCap("drivers.manage")? [{id:"drivers",     label:"Drivers"}]         : []),
+    ...(hasCap("staff.manage")  ? [{id:"people",      label:"People"}]          : []),
   ];
-  if(!TABS.some(t=>t.id===TAB)) TAB=TABS[0].id;   // never land on a hidden tab
   root.innerHTML = `
    <header>
-     <div><h1>${isWH?"FitFuel Warehouse":"FitFuel Admin"}</h1><div class="sub">${esc(NAME)} · v${APP_VERSION}</div></div>
+     <div><h1>${IS_WH_APP?"FitFuel Warehouse":"FitFuel Admin"}</h1><div class="sub">${esc(NAME)} · v${APP_VERSION}</div></div>
      <button id="logout">Log out</button>
    </header>
    <div class="wrap">
@@ -234,23 +267,31 @@ function renderApp(){
      <div id="panel"><div class="loading">Loading…</div></div>
    </div>`;
   document.getElementById("logout").onclick=logout;
+  if(!TABS.length){
+    document.getElementById("panel").innerHTML =
+      '<div class="empty">This account has no rights yet.<br>Ask an admin to grant them in People, then sign in again.</div>';
+    return;
+  }
+  if(!TABS.some(t=>t.id===TAB)) TAB=TABS[0].id;   // never land on a hidden tab
   root.querySelectorAll(".tabs button").forEach(b=>{ b.onclick=()=>{ TAB=b.getAttribute("data-tab"); renderApp(); }; });
+  root.querySelector(`.tabs button[data-tab="${TAB}"]`)?.classList.add("on");
   startGeo();
   if(TAB==="fulfillment") loadFulfillment();
   else if(TAB==="returns") loadReturns();
   else if(TAB==="orders") loadOrders();
   else if(TAB==="allocate") loadAllocate();
   else if(TAB==="drivers") loadDrivers();
-  else if(TAB==="admins") loadAdmins();
+  else if(TAB==="people") loadPeople();
   else if(TAB==="summary") loadSummary();
   else loadActivity();
 }
 
 // ---- Drivers ----
 async function loadDrivers(){
+  const canWrite = rightAtLeast("drivers.manage","write");
   const panel=document.getElementById("panel");
   panel.innerHTML = `
-    <div class="card">
+    ${canWrite?`<div class="card">
       <h3>Add driver</h3>
       <p class="hint">Driver logs in on the delivery app with this username + PIN.</p>
       <div class="row2">
@@ -260,13 +301,13 @@ async function loadDrivers(){
       </div>
       <button class="btn" id="add">Add driver</button>
       <div class="err" id="adderr"></div>
-    </div>
+    </div>`:""}
     <div class="card">
       <h3>Drivers</h3>
       <div class="scroll" id="dlist"><div class="loading">Loading…</div></div>
     </div>`;
 
-  document.getElementById("add").onclick=addDriver;
+  if(canWrite) document.getElementById("add").onclick=addDriver;
 
   try{
     const {drivers}=await api("/admin/drivers");
@@ -281,16 +322,17 @@ async function loadDrivers(){
 
 function driverRow(d){
   const u=esc(d.username);
+  const btns = [
+    rightAtLeast("drivers.manage","write") ? `<button class="btn sm ghost" onclick="editDriver('${u}')">Edit</button>
+      <button class="btn sm ghost" onclick="resetPin('${u}')">Reset PIN</button>` : "",
+    rightAtLeast("drivers.manage","edit") ? `<button class="btn sm ${d.active?'danger':'ghost'}" onclick="toggleDriver('${u}',${d.active?'false':'true'})">${d.active?'Disable':'Enable'}</button>` : "",
+  ].join("");
   return `<tr>
     <td><strong>${u}</strong></td>
     <td>${esc(d.name)}</td>
     <td>${d.active?'<span class="pill on">active</span>':'<span class="pill off">disabled</span>'}</td>
     <td>${esc((d.created_at||"").slice(0,10))}</td>
-    <td class="actions">
-      <button class="btn sm ghost" onclick="editDriver('${u}')">Edit</button>
-      <button class="btn sm ghost" onclick="resetPin('${u}')">Reset PIN</button>
-      <button class="btn sm ${d.active?'danger':'ghost'}" onclick="toggleDriver('${u}',${d.active?'false':'true'})">${d.active?'Disable':'Enable'}</button>
-    </td>
+    <td class="actions">${btns||'<span class="hint">—</span>'}</td>
   </tr>`;
 }
 
@@ -369,64 +411,125 @@ function activityRow(a){
   </tr>`;
 }
 
-// ---- Admins (manage other admin users) ----
-async function loadAdmins(){
+// ---- People & rights (staff accounts, mirrors the wholesale app) ----
+const CAP_LABELS = {
+  "allocate":       "Allocate orders",
+  "fulfilment":     "Fulfillment & dispatch",
+  "deliveries":     "Delivery queue",
+  "returns":        "Returns",
+  "summary":        "End-of-day summary",
+  "activity":       "Activity log",
+  "drivers.manage": "Manage drivers",
+  "staff.manage":   "Manage people & rights",
+};
+const LEVEL_LABELS = { read:"Read", write:"Write", edit:"Edit" };
+let CAPS_LIST = Object.keys(CAP_LABELS);      // replaced by whatever the server
+let LEVELS_LIST = ["read","write","edit"];    // sends, so new rows need no deploy
+
+// Client mirror of the server's grant parsing (a bare "cap" is a legacy edit).
+function grantLevel(permissions, cap){
+  for (const g of permissions ?? []) {
+    const [c, l] = String(g).split(":");
+    if (c === cap) return LEVELS_LIST.includes(l) ? l : "edit";
+  }
+  return null;
+}
+
+function holdingsSummary(p){
+  if (p.is_master) return "everything";
+  const counts = {};
+  for (const c of CAPS_LIST) { const l = grantLevel(p.permissions, c); if (l) counts[l] = (counts[l]||0)+1; }
+  const bits = LEVELS_LIST.slice().reverse().filter(l=>counts[l]).map(l=>`${counts[l]} ${l}`);
+  return bits.length ? bits.join(" · ") : "no rights yet";
+}
+
+async function loadPeople(){
+  const canWrite = rightAtLeast("staff.manage","write");
+  const canEdit  = rightAtLeast("staff.manage","edit");
   const panel=document.getElementById("panel");
   panel.innerHTML = `
-    <div class="card">
-      <h3>Add admin</h3>
-      <p class="hint">New admins have the same rights as you. The master account can't be disabled or deleted.</p>
+    ${canWrite?`<div class="card">
+      <h3>Add person</h3>
+      <p class="hint">New people start with <b>no rights</b> — grade them in their card after adding.</p>
       <div class="row2">
         <div><label>Username</label><input id="au" autocapitalize="none" autocorrect="off" /></div>
         <div><label>Full name</label><input id="an" /></div>
         <div><label>Password</label><input id="ap" autocomplete="off" /></div>
       </div>
-      <button class="btn" id="addadmin">Add admin</button>
+      <button class="btn" id="addadmin">Add person</button>
       <div class="err" id="aerr"></div>
-    </div>
-    <div class="card">
-      <h3>Admins</h3>
-      <div class="scroll" id="alist2"><div class="loading">Loading…</div></div>
-    </div>`;
-
-  document.getElementById("addadmin").onclick=addAdmin;
+    </div>`:""}
+    <p class="hint" style="margin:0 0 10px"><b>Read</b> look only · <b>Write</b> the everyday work · <b>Edit</b> also undo what has already happened — disable an account, change someone's rights. Changes apply the next time the person signs in.</p>
+    <div id="plist"><div class="loading">Loading…</div></div>`;
+  if(canWrite) document.getElementById("addadmin").onclick=addPerson;
 
   try{
-    const {admins}=await api("/admin/admins");
-    ADMINS=admins;
-    const list=document.getElementById("alist2");
-    list.innerHTML = `<table><thead><tr>
-        <th>Username</th><th>Name</th><th>Status</th><th>Added</th><th></th>
-      </tr></thead><tbody>${admins.map(adminRow).join("")}</tbody></table>`;
-  }catch(e){ document.getElementById("alist2").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+    const r=await api("/admin/admins");
+    ADMINS=r.admins||[];
+    if(Array.isArray(r.capabilities)&&r.capabilities.length) CAPS_LIST=r.capabilities;
+    if(Array.isArray(r.levels)&&r.levels.length) LEVELS_LIST=r.levels;
+    const plist=document.getElementById("plist");
+    plist.innerHTML = ADMINS.map(p=>personCard(p,canEdit)).join("");
+    // One delegated handler moves the segmented selection; Save posts it.
+    plist.onclick=(e)=>{
+      const b=e.target.closest(".lvl"); if(!b) return;
+      b.parentElement.querySelectorAll(".lvl").forEach(x=>x.classList.remove("on"));
+      b.classList.add("on");
+    };
+  }catch(e){ document.getElementById("plist").innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
-function adminRow(a){
-  const u=esc(a.username);
-  const isMe = (a.username||"").toLowerCase()===ME;
-  const badges = (a.is_master?'<span class="pill master">master</span> ':'') + (isMe?'<span class="pill status">you</span>':'');
-  // Master row: only the master (you) can reset its password; never disable/delete.
-  // Your own row: you can reset your password, but not disable/delete yourself.
-  const canEdit   = a.is_master ? isMe : true;
-  const canReset  = a.is_master ? isMe : true;
-  const canToggle = !a.is_master && !isMe;
-  const canDelete = !a.is_master && !isMe;
-  const btns = [
-    canEdit   ? `<button class="btn sm ghost" onclick="editAdmin('${u}')">Edit</button>` : "",
-    canReset  ? `<button class="btn sm ghost" onclick="resetAdmin('${u}')">Reset password</button>` : "",
-    canToggle ? `<button class="btn sm ${a.active?'danger':'ghost'}" onclick="toggleAdmin('${u}',${a.active?'false':'true'})">${a.active?'Disable':'Enable'}</button>` : "",
-    canDelete ? `<button class="btn sm danger" onclick="deleteAdmin('${u}')">Delete</button>` : "",
-  ].join("");
-  return `<tr>
-    <td><strong>${u}</strong> ${badges}</td>
-    <td>${esc(a.name)}</td>
-    <td>${a.active?'<span class="pill on">active</span>':'<span class="pill off">disabled</span>'}</td>
-    <td>${esc((a.created_at||"").slice(0,10))}</td>
-    <td class="actions">${btns||'<span class="hint">—</span>'}</td>
-  </tr>`;
+function personCard(p, canEdit){
+  const u=esc(p.username);
+  const isMe=(p.username||"").toLowerCase()===ME;
+  const badges=(p.is_master?'<span class="pill master">master</span> ':'')
+    +(isMe?'<span class="pill status">you</span> ':'')
+    +(p.active?'':'<span class="pill off">disabled</span>');
+  const matrix = (!p.is_master && canEdit) ? `
+    <div class="capgrid">
+      ${CAPS_LIST.map((c)=>{
+        const held=grantLevel(p.permissions,c);
+        return `<div class="caprow">
+          <div class="capname">${esc(CAP_LABELS[c]??c)}</div>
+          <div class="levels" data-for="${u}" data-cap="${esc(c)}">
+            ${[["","None"],...LEVELS_LIST.map(l=>[l,LEVEL_LABELS[l]??l])].map(([v,label])=>
+              `<button type="button" class="lvl ${held===(v||null)?"on":""}" data-level="${v}">${label}</button>`).join("")}
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+    <button class="btn sm" style="margin-top:12px" onclick="saveRights('${u}')">Save rights</button>` : "";
+  const tools = canEdit ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px;align-items:center">
+      ${(!p.is_master||isMe)?`<input id="pw-${u}" placeholder="new password" autocomplete="off" style="flex:1;min-width:150px;padding:9px 12px;font-size:14px" />
+        <button class="btn sm ghost" onclick="resetAdmin('${u}')">Reset password</button>`:""}
+      ${(p.is_master?isMe:true)?`<button class="btn sm ghost" onclick="editAdmin('${u}')">Edit</button>`:""}
+      ${(!p.is_master&&!isMe)?`<button class="btn sm ${p.active?'danger':'ghost'}" onclick="toggleAdmin('${u}',${p.active?'false':'true'})">${p.active?'Disable':'Enable'}</button>`:""}
+      ${(!p.is_master&&!isMe)?`<button class="btn sm danger" onclick="deleteAdmin('${u}')">Delete</button>`:""}
+    </div>`:"";
+  return `<details class="card pcard">
+    <summary>
+      <span><b>${esc(p.name)}</b> · <span class="hint">${u}</span> ${badges}</span>
+      <span class="hint">${esc(holdingsSummary(p))}</span>
+    </summary>
+    ${matrix}${tools}
+  </details>`;
 }
 
-async function addAdmin(){
+async function saveRights(u){
+  // Rebuilt from the DOM and replaced wholesale; "None" simply drops out.
+  const permissions=[...document.querySelectorAll(`.levels[data-for="${u}"]`)]
+    .map(g=>[g.dataset.cap, g.querySelector(".lvl.on")?.dataset.level])
+    .filter(([,level])=>level)
+    .map(([cap,level])=>`${cap}:${level}`);
+  try{
+    await api("/admin/rights",{method:"POST",body:JSON.stringify({username:u,permissions})});
+    toast(`✓ ${u}: rights updated — they take effect next time ${u} signs in`);
+    loadPeople();
+  }catch(e){ toast(e.message); }
+}
+
+async function addPerson(){
   const err=document.getElementById("aerr"); err.textContent="";
   const username=document.getElementById("au").value.trim();
   const name=document.getElementById("an").value.trim();
@@ -434,57 +537,59 @@ async function addAdmin(){
   if(!username||!name||!password){ err.textContent="Username, name and password are all required"; return; }
   const btn=document.getElementById("addadmin"); btn.disabled=true; btn.textContent="Adding…";
   try{
-    await api("/admin/admins",{method:"POST",body:JSON.stringify({username,name,password})});
-    toast("✓ Admin added");
-    loadAdmins();
-  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add admin"; }
+    await api("/admin/admins",{method:"POST",body:JSON.stringify({username,name,password,permissions:[]})});
+    toast("✓ Added — now grade their rights");
+    loadPeople();
+  }catch(e){ err.textContent=e.message; btn.disabled=false; btn.textContent="Add person"; }
 }
 
 async function editAdmin(username){
   const a=ADMINS.find(x=>x.username===username)||{username,name:""};
-  const name=prompt("Admin's full name:", a.name||""); if(name===null) return;
+  const name=prompt("Full name:", a.name||""); if(name===null) return;
   if(!name.trim()){ toast("Name cannot be empty"); return; }
   const nu=prompt("Username (login ID — lowercase letters, numbers, . _ -):", a.username); if(nu===null) return;
   if(!nu.trim()){ toast("Username cannot be empty"); return; }
   try{
     await api("/admin/admin-edit",{method:"POST",body:JSON.stringify({username, name:name.trim(), newUsername:nu.trim()})});
-    toast("✓ Admin updated");
+    toast("✓ Updated");
     if(username===ME){ ME=nu.trim().toLowerCase(); localStorage.setItem("ff_admin_user",ME); }
-    loadAdmins();
+    loadPeople();
   }catch(e){ toast(e.message); }
 }
 
 async function resetAdmin(username){
-  const password=prompt("New password for admin "+username+":");
-  if(password==null) return;
-  if(!password.trim()){ toast("Password cannot be empty"); return; }
+  const inp=document.getElementById("pw-"+username);
+  const password=(inp?inp.value:"").trim();
+  if(!password){ toast("Type the new password in the box first"); return; }
   try{
-    await api("/admin/admin-reset",{method:"POST",body:JSON.stringify({username,password:password.trim()})});
+    await api("/admin/admin-reset",{method:"POST",body:JSON.stringify({username,password})});
+    if(inp) inp.value="";
     toast("✓ Password reset for "+username);
   }catch(e){ toast(e.message); }
 }
 
 async function toggleAdmin(username,active){
   const verb=active?"enable":"disable";
-  if(!confirm("Are you sure you want to "+verb+" admin "+username+"?")) return;
+  if(!confirm("Are you sure you want to "+verb+" "+username+"?")) return;
   try{
     await api("/admin/admin-toggle",{method:"POST",body:JSON.stringify({username,active})});
     toast("✓ "+username+" "+(active?"enabled":"disabled"));
-    loadAdmins();
+    loadPeople();
   }catch(e){ toast(e.message); }
 }
 
 async function deleteAdmin(username){
-  if(!confirm("Delete admin "+username+"? This cannot be undone.")) return;
+  if(!confirm("Delete "+username+"? This cannot be undone.")) return;
   try{
     await api("/admin/admin-delete",{method:"POST",body:JSON.stringify({username})});
     toast("✓ Deleted "+username);
-    loadAdmins();
+    loadPeople();
   }catch(e){ toast(e.message); }
 }
 
 window.resetPin=resetPin; window.toggleDriver=toggleDriver; window.editDriver=editDriver;
 window.resetAdmin=resetAdmin; window.toggleAdmin=toggleAdmin; window.deleteAdmin=deleteAdmin; window.editAdmin=editAdmin;
+window.saveRights=saveRights;
 
 // ---- Orders (same view drivers get: see / fulfill / report issues) ----
 // ---- Fulfillment (warehouse: verify the pick, then dispatch) ----
@@ -540,12 +645,12 @@ function fcard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    <div class="oactions">
+    ${rightAtLeast("fulfilment") ? `<div class="oactions">
       ${o.assignedTo
         ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">${isCarrier?"✓ Courier collected":"✓ Fulfilled"}</button>`
         : `<button class="btn" disabled title="Allocate this order to a driver or courier first">Allocate first</button>`}
       ${secondBtn}
-    </div>
+    </div>` : ""}
   </div>`;
 }
 
@@ -643,9 +748,9 @@ function rcard(o){
     <div class="otop"><div class="onum">${esc(o.name)}</div><span class="pill off">${esc(RETURN_LABEL[o.returnReason]||o.returnReason||"returned")}</span></div>
     <div class="owho">${esc(o.customerName)}</div>
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    <div class="oactions">
+    ${rightAtLeast("returns") ? `<div class="oactions">
       <button class="btn" id="rc-${esc(o.id)}" onclick="receiveReturn('${esc(o.id)}')">✓ Received back</button>
-    </div>
+    </div>` : ""}
   </div>`;
 }
 async function receiveReturn(id){
@@ -688,10 +793,10 @@ function ocard(o){
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
-    <div class="oactions">
+    ${rightAtLeast("deliveries") ? `<div class="oactions">
       <button class="btn" onclick="otoggleFulfill('${esc(o.id)}')">✓ Delivered</button>
       <button class="btn ghost" onclick="otoggleIssue('${esc(o.id)}')">Issue ▾</button>
-    </div>
+    </div>` : ""}
     <div class="ofulfil" id="offl-${esc(o.id)}">
       <label class="fl">Proof of delivery photos (up to 3, required)</label>
       <input type="file" accept="image/*" capture="environment" id="ophoto-${esc(o.id)}" onchange="onOPhoto('${esc(o.id)}')" />
@@ -948,7 +1053,7 @@ async function loadAllocate(){
         </div>
         ${loc(o)}
         <label class="hint" style="display:block;margin-top:10px">Allocate to driver or courier</label>
-        <select onchange="assignOrder('${esc(o.id)}', this.value)">${opts(o.assignedTo)}</select>
+        <select ${rightAtLeast("allocate")?`onchange="assignOrder('${esc(o.id)}', this.value)"`:"disabled"}>${opts(o.assignedTo)}</select>
       </div>`;
     }).join("")+'</div>';
   }catch(e){ const el=document.getElementById("alloc"); if(el) el.outerHTML='<div class="empty" id="alloc">'+esc(e.message)+'</div>'; }

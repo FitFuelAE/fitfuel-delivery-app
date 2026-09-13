@@ -11,6 +11,18 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-09-13.2
+- **Per-user rights**, same model as the wholesale app: the Admins tab is now
+  **People** — every staff account gets capability rows (Allocate orders,
+  Fulfillment & dispatch, Delivery queue, Returns, End-of-day summary, Activity
+  log, Manage drivers, Manage people & rights) at **None / Read / Write / Edit**,
+  with Save rights, per-row password reset, and disable. New people start with
+  no rights; rights changes apply the next time the person signs in.
+- Tabs and action buttons now follow the signed-in person's rights (the server
+  enforces them on every route regardless). The old warehouse-account limitation
+  became a rights preset, so warehouse staff keep exactly what they had.
+- This release signs everyone out once (drivers included) — sign back in.
+
 ## v2026-09-13.1
 - **Root launcher**: delivery.fitfuel.ae now shows a pick-your-app page
   (Driver / Warehouse / Admin) instead of redirecting straight to Driver.
