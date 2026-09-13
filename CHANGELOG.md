@@ -1,6 +1,9 @@
 # FitFuel Delivery — changelog
 
 Version scheme: `YYYY-MM-DD.N` (date + same-day counter), the same as the
+## v2026-09-13.5
+- All pages carry `noindex` (root launcher and driver were missing it) so the staff apps never appear in search engines.
+
 wholesale app. Before every push that changes an app:
 
 ```bash

@@ -1,4 +1,4 @@
-const CACHE = "ffd-wh-2026-09-13.4";
+const CACHE = "ffd-wh-2026-09-13.5";
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 self.addEventListener("fetch", (e) => {
