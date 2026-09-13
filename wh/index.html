@@ -140,6 +140,19 @@ let ME_MASTER = localStorage.getItem("ff_admin_master") === "1";
 let ME_WAREHOUSE = localStorage.getItem("ff_admin_wh") === "1";
 let TAB = "allocate";   // land on step 1 of the workflow
 let DRIVERS = [], ADMINS = [];   // last-loaded lists, for the Edit dialogs
+let CARRIERS = [], CARRIERS_LOADED = false;   // 3PL couriers (allocation targets with no logins)
+
+async function ensureCarriers(){
+  if(CARRIERS_LOADED) return;
+  try{ const r=await api("/admin/carriers"); CARRIERS=(r.carriers||[]).filter(c=>c.active); }catch{ CARRIERS=[]; }
+  CARRIERS_LOADED=true;
+}
+function carrierName(code){ const c=CARRIERS.find(x=>x.code===code); return c?c.name:String(code||"").toUpperCase(); }
+function isCarrierAssignee(a){ return !!a && a.startsWith("carrier:"); }
+// "carrier:tfm" -> "🚛 TFM Express"; "raj" -> "🚚 raj" (pills + group headers).
+function assigneeLabel(a){ return isCarrierAssignee(a) ? "🚛 "+carrierName(a.slice(8)) : "🚚 "+a; }
+// Summary/Activity rows log the bare carrier code as the actor (e.g. "tfm").
+function displayActor(u){ const c=CARRIERS.find(x=>x.code===u); return c ? "🚛 "+c.name : u; }
 
 function toast(msg) {
   const t = document.getElementById("toast");
@@ -335,6 +348,7 @@ async function loadActivity(){
       <div class="scroll" id="alist"><div class="loading">Loading…</div></div>
     </div>`;
   try{
+    await ensureCarriers();
     const {activity}=await api("/admin/activity");
     const list=document.getElementById("alist");
     if(!activity.length){ list.innerHTML='<div class="empty">No activity logged yet.</div>'; return; }
@@ -347,7 +361,7 @@ async function loadActivity(){
 function activityRow(a){
   return `<tr>
     <td>${fmtTime(a.created_at)}</td>
-    <td>${esc(a.driver_username||"—")}</td>
+    <td>${esc(a.driver_username?displayActor(a.driver_username):"—")}</td>
     <td>${esc(a.order_name||a.order_gid||"—")}</td>
     <td><span class="pill status">${esc((a.status||"").replace("_"," "))}</span></td>
     <td>${esc(a.note||"")}</td>
@@ -481,10 +495,13 @@ async function loadFulfillment(){
   await loadFulfillList();
 }
 
+let FORDERS={};
 async function loadFulfillList(){
   const list=document.getElementById("flist");
   try{
+    await ensureCarriers();
     const {orders}=await api("/orders?scope=unfulfilled");
+    FORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
     if(!orders.length){ list.innerHTML='<div class="empty">🎉 Nothing waiting to be fulfilled.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadFulfillList()">Refresh</button></div>'; return; }
     // Group driver-wise so the warehouse can pick one driver's run at a time.
     const groups={};
@@ -494,7 +511,7 @@ async function loadFulfillList(){
       const n=groups[k].length;
       const label = k==="__none"
         ? `⚠️ Not allocated yet <span class="cnt">· ${n} order${n>1?"s":""} — allocate in the Allocate tab</span>`
-        : `🚚 ${esc(k)} <span class="cnt">· ${n} order${n>1?"s":""}</span>`;
+        : `${esc(assigneeLabel(k))} <span class="cnt">· ${n} order${n>1?"s":""}</span>`;
       // Unallocated stays open (it needs action); driver runs start collapsed.
       return `<details class="grp${k==="__none"?" warn":""}"${k==="__none"?" open":""}>
         <summary>${label}</summary>
@@ -506,35 +523,49 @@ async function loadFulfillList(){
 
 function fcard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
+  const isCarrier=isCarrierAssignee(o.assignedTo);
+  // Carrier orders: "Book shipment" creates the courier AWB (label printable) with
+  // no fulfilment or customer message; "Courier collected" is the actual dispatch.
+  const secondBtn = isCarrier
+    ? (o.bookedAwb
+        ? `<button class="btn ghost" id="fl-${esc(o.id)}" onclick="printLabel('${esc(o.id)}')">🖨 Label</button>`
+        : `<button class="btn ghost" id="fb-${esc(o.id)}" onclick="bookCarrier('${esc(o.id)}')">📦 Book shipment</button>`)
+    : `<button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>`;
   return `
   <div class="ocard" id="fcard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:' <span class="pill off">unallocated</span>'}</div>
+    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${esc(o.bookedAwb)}</span>`:''}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     <div class="oactions">
       ${o.assignedTo
-        ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>`
-        : `<button class="btn" disabled title="Allocate this order to a driver first">Allocate first</button>`}
-      <button class="btn ghost" id="fn-${esc(o.id)}" onclick="notifyShipped('${esc(o.id)}')">📲 Notify shipped</button>
+        ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">${isCarrier?"✓ Courier collected":"✓ Fulfilled"}</button>`
+        : `<button class="btn" disabled title="Allocate this order to a driver or courier first">Allocate first</button>`}
+      ${secondBtn}
     </div>
   </div>`;
 }
 
 async function fulfilOrder(id){
-  if(!confirm("Fulfil this order in Shopify and tell the customer it's on the way?")) return;
+  const o=FORDERS[id]||{};
+  const isCarrier=isCarrierAssignee(o.assignedTo);
+  const q=isCarrier
+    ? "Has the courier collected this order? This fulfils it in Shopify and tells the customer it's on the way."
+    : "Fulfil this order in Shopify and tell the customer it's on the way?";
+  if(!confirm(q)) return;
   const btn=document.getElementById("ff-"+id);
   if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
   const el=document.getElementById("fcard-"+id); if(el) el.classList.add("fade");
   try{
     const r=await api("/admin/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
-    toast(r&&r.otwWarning ? ("✓ Fulfilled — customer not messaged: "+r.otwWarning) : "✓ Fulfilled & customer notified");
+    const ok=r&&r.awb ? "✓ Dispatched — AWB "+r.awb : "✓ Fulfilled";
+    toast(r&&r.otwWarning ? (ok+" — customer not messaged: "+r.otwWarning) : ok+" & customer notified");
     if(el){ el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300); }
   }catch(e){
     if(el) el.classList.remove("fade");
-    if(btn){ btn.disabled=false; btn.textContent="✓ Fulfilled"; }
+    if(btn){ btn.disabled=false; btn.textContent=isCarrier?"✓ Courier collected":"✓ Fulfilled"; }
     toast(e.message);
   }
 }
@@ -549,7 +580,37 @@ async function notifyShipped(id){
   }catch(e){ if(btn){ btn.disabled=false; btn.textContent="📲 Notify shipped"; } toast(e.message); }
 }
 
+// Book the courier shipment (AWB) while packing — no fulfilment, no customer message.
+async function bookCarrier(id){
+  const btn=document.getElementById("fb-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Booking…"; }
+  try{
+    const r=await api("/admin/carrier-book",{method:"POST",body:JSON.stringify({orderGid:id})});
+    toast("📦 Booked — AWB "+r.awb);
+    loadFulfillList();
+  }catch(e){
+    if(btn){ btn.disabled=false; btn.textContent="📦 Book shipment"; }
+    toast(e.message);
+  }
+}
+
+// Fetch the courier label PDF and open/download it for printing.
+async function printLabel(id){
+  const btn=document.getElementById("fl-"+id);
+  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Fetching…"; }
+  try{
+    const r=await api("/admin/carrier-label",{method:"POST",body:JSON.stringify({orderGid:id})});
+    const bytes=Uint8Array.from(atob(r.pdf),c=>c.charCodeAt(0));
+    const url=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
+    const w=window.open(url,"_blank");
+    if(!w){ const a=document.createElement("a"); a.href=url; a.download="tfm-label-"+(r.awb||id)+".pdf"; a.click(); }
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+  }catch(e){ toast(e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent="🖨 Label"; } }
+}
+
 window.loadFulfillList=loadFulfillList; window.fulfilOrder=fulfilOrder; window.notifyShipped=notifyShipped;
+window.bookCarrier=bookCarrier; window.printLabel=printLabel;
 
 // ---- Returns (items coming back from drivers) ----
 const RETURN_LABEL={cancelled:"Order cancelled",refused:"Refused",changed_mind:"Changed mind",undelivered:"Couldn't deliver",returned:"Returned"};
@@ -562,6 +623,7 @@ async function loadReturns(){
 async function loadReturnList(){
   const list=document.getElementById("rlist");
   try{
+    await ensureCarriers();
     const {orders}=await api("/orders?scope=returns");
     if(!orders.length){ list.innerHTML='<div class="empty">🎉 Nothing to receive back.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadReturnList()">Refresh</button></div>'; return; }
     const groups={};
@@ -569,7 +631,7 @@ async function loadReturnList(){
     const keys=Object.keys(groups).sort((a,b)=> a==="__none"?1 : b==="__none"?-1 : a.localeCompare(b));
     list.innerHTML=keys.map(k=>{
       const n=groups[k].length;
-      const label=k==="__none"?`⚠️ Unassigned <span class="cnt">· ${n}</span>`:`🚚 ${esc(k)} <span class="cnt">· ${n} item${n>1?"s":""}</span>`;
+      const label=k==="__none"?`⚠️ Unassigned <span class="cnt">· ${n}</span>`:`${esc(assigneeLabel(k))} <span class="cnt">· ${n} item${n>1?"s":""}</span>`;
       return `<details class="grp${k==="__none"?" warn":""}" open><summary>${label}</summary>${groups[k].map(rcard).join("")}</details>`;
     }).join("")+'<button class="btn ghost" onclick="loadReturnList()">Refresh</button>';
   }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
@@ -606,6 +668,7 @@ let OORDERS={};
 async function loadOrderList(){
   const list=document.getElementById("olist");
   try{
+    await ensureCarriers();
     const {orders}=await api("/orders?scope=deliver");
     OORDERS=Object.fromEntries(orders.map(o=>[o.id,o]));
     if(!orders.length){ list.outerHTML='<div class="empty" id="olist">🎉 No orders waiting to be delivered.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadOrderList()">Refresh</button></div>'; return; }
@@ -617,8 +680,9 @@ function ocard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
   return `
   <div class="ocard" id="ocard-${esc(o.id)}">
-    <div class="otop"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="onum">${esc(o.name)}</div>${o.assignedTo?`<span class="pill on">🚚 ${esc(o.assignedTo)}</span>`:`<span class="pill off">unallocated</span>`}</div><div class="ototal">${esc(o.total)}</div></div>
+    <div class="otop"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap"><div class="onum">${esc(o.name)}</div>${o.assignedTo?`<span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:`<span class="pill off">unallocated</span>`}</div><div class="ototal">${esc(o.total)}</div></div>
     <div class="owho">${esc(o.customerName)}</div>
+    ${o.carrier?`<div class="hint" style="margin-top:8px">🚛 ${esc(carrierName(o.carrier))} · AWB ${esc(o.awb||"—")}${o.carrierStatus?` · ${esc(o.carrierStatus)}`:""} — updates automatically as the courier reports</div>`:""}
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
@@ -786,6 +850,7 @@ async function loadSummary(){
     <div id="sumbody"><div class="loading">Loading…</div></div>`;
   document.getElementById("sumdate").onchange=(e)=>{ SUMMARY_DATE=e.target.value||todayDubai(); loadSummary(); };
   try{
+    await ensureCarriers();
     const {summary}=await api("/admin/summary?date="+encodeURIComponent(SUMMARY_DATE));
     const body=document.getElementById("sumbody");
     if(!summary.length){ body.innerHTML='<div class="empty">No deliveries on this date.</div>'; return; }
@@ -798,7 +863,7 @@ function fmtMoney(n){ return (Math.round(Number(n||0)*100)/100).toFixed(2); }
 function drvCard(d){
   return `<div class="card drvcard">
     <div class="drvtop">
-      <div class="nm">${esc(d.driver)}</div>
+      <div class="nm">${esc(displayActor(d.driver))}</div>
       <div class="stat"><b>${esc(d.completed)}</b> delivered · cash collected <span class="cashbig">${esc(fmtMoney(d.cashTotal))}</span></div>
     </div>
     <div>${d.items.map(delivRow).join("")}</div>
@@ -849,16 +914,20 @@ async function loadAllocate(){
   const panel=document.getElementById("panel");
   panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
   try{
-    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=unfulfilled")]);
+    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=unfulfilled"), ensureCarriers()]);
     const active=(dRes.drivers||[]).filter(d=>d.active);
     const orders=oRes.orders||[];
     const el=document.getElementById("alloc");
-    if(!active.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
+    if(!active.length && !CARRIERS.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
     if(!orders.length){ el.outerHTML='<div class="empty" id="alloc">No open orders to allocate.</div>'; return; }
     // Group by the 7 emirates so a driver can be assigned to a whole zone.
     orders.forEach(o=>{ o._em=emirateOf(o); });
     orders.sort((a,b)=> EMIRATE_ORDER.indexOf(a._em)-EMIRATE_ORDER.indexOf(b._em) || (a.city||"").localeCompare(b.city||"") || a.name.localeCompare(b.name));
-    const opts=(sel)=>'<option value="">— Unassigned —</option>'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("");
+    // Couriers (3PL, e.g. TFM Express) allocate like drivers but have no logins:
+    // dispatch books the shipment with them instead of a driver handover.
+    const opts=(sel)=>'<option value="">— Unassigned —</option>'
+      +(CARRIERS.length?'<optgroup label="Couriers">'+CARRIERS.map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
+      +'<optgroup label="Drivers">'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("")+'</optgroup>';
     const loc=(o)=>{
       const cityBits=[o.city, (o.province&&o.province!==o.city)?o.province:""].filter(Boolean).join(", ");
       return (cityBits||o.area)?`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center">
@@ -874,10 +943,10 @@ async function loadAllocate(){
       <div class="card">
         <div class="drvtop">
           <div><div class="nm">${esc(o.name)}</div><div class="hint">${esc(o.customerName||"")}</div></div>
-          <span class="pill ${o.assignedTo?'on':'off'}" id="apill-${esc(o.id)}">${o.assignedTo?esc(o.assignedTo):'unassigned'}</span>
+          <span class="pill ${o.assignedTo?'on':'off'}" id="apill-${esc(o.id)}">${o.assignedTo?esc(assigneeLabel(o.assignedTo)):'unassigned'}</span>
         </div>
         ${loc(o)}
-        <label class="hint" style="display:block;margin-top:10px">Allocate to driver</label>
+        <label class="hint" style="display:block;margin-top:10px">Allocate to driver or courier</label>
         <select onchange="assignOrder('${esc(o.id)}', this.value)">${opts(o.assignedTo)}</select>
       </div>`;
     }).join("")+'</div>';
@@ -888,8 +957,12 @@ async function assignOrder(orderGid, driverUsername){
   try{
     const r=await api("/admin/assign",{method:"POST",body:JSON.stringify({orderGid,driverUsername})});
     const pill=document.getElementById("apill-"+orderGid);
-    if(pill){ pill.className="pill "+(r.assignedTo?"on":"off"); pill.textContent=r.assignedTo||"unassigned"; }
-    toast(r.assignedTo?("✓ Allocated to "+r.assignedTo):"✓ Unassigned");
+    if(pill){ pill.className="pill "+(r.assignedTo?"on":"off"); pill.textContent=r.assignedTo?assigneeLabel(r.assignedTo):"unassigned"; }
+    let msg=r.assignedTo?("✓ Allocated to "+assigneeLabel(r.assignedTo)):"✓ Unassigned";
+    // Moving a pre-booked order away from its courier cancels the shipment; surface
+    // the rare case where that revoke didn't go through.
+    if(r.bookingWarning) msg+=" — ⚠️ "+r.bookingWarning;
+    toast(msg);
   }catch(e){ toast(e.message); }
 }
 window.assignOrder=assignOrder;
