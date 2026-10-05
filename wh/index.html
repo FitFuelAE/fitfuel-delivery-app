@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-05.1";
+const APP_VERSION = "2026-10-05.2";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -173,21 +173,27 @@ const rightAtLeast = (cap, level) => {
   const have = ME_RIGHTS[cap];
   return !!have && RANK[have] >= RANK[level || "write"];
 };
-let CARRIERS = [], CARRIERS_LOADED = false;   // 3PL couriers (allocation targets with no logins)
+let CARRIERS = [], CARRIERS_LOADED = false;   // 3PL couriers (allocation targets with no logins), retired ones included for history
 
 async function ensureCarriers(){
   if(CARRIERS_LOADED) return;
-  try{ const r=await api("/admin/carriers"); CARRIERS=(r.carriers||[]).filter(c=>c.active); }catch{ CARRIERS=[]; }
+  try{ const r=await api("/admin/carriers"); CARRIERS=r.carriers||[]; }catch{ CARRIERS=[]; }
   CARRIERS_LOADED=true;
 }
 function carrierName(code){ const c=CARRIERS.find(x=>x.code===code); return c?c.name:String(code||"").toUpperCase(); }
 function isCarrierAssignee(a){ return !!a && a.startsWith("carrier:"); }
-// "carrier:tfm" -> "🚛 TFM Express"; "raj" -> "🚚 raj" (pills + group headers).
+// "carrier:swftbox" -> "🚛 swftbox"; "raj" -> "🚚 raj" (pills + group headers).
 function assigneeLabel(a){ return isCarrierAssignee(a) ? "🚛 "+carrierName(a.slice(8)) : "🚚 "+a; }
-// TFM's public tracker: prefills the AWB and auto-submits.
-function trackUrl(awb){ return "https://customer.tfmex.com/Skybill/TrackSkybill?awb="+encodeURIComponent(awb); }
+// Courier's public tracker. swftbox numbers mix letters and digits (HJVMU27811);
+// all-digit AWBs are history from TFM Express (retired 2026-10).
+function trackUrl(awb){
+  const a=String(awb||"").trim();
+  return /^\d+$/.test(a)
+    ? "https://customer.tfmex.com/Skybill/TrackSkybill?awb="+encodeURIComponent(a)
+    : "https://t.swftbox.com/"+encodeURIComponent(a);
+}
 function awbLink(awb){ return awb ? `<a href="${esc(trackUrl(awb))}" target="_blank" style="color:inherit">${esc(awb)}</a>` : "—"; }
-// Summary/Activity rows log the bare carrier code as the actor (e.g. "tfm").
+// Summary/Activity rows log the bare carrier code as the actor (e.g. "swftbox").
 function displayActor(u){ const c=CARRIERS.find(x=>x.code===u); return c ? "🚛 "+c.name : u; }
 
 function toast(msg) {
@@ -717,7 +723,7 @@ function fcard(o){
         : `<button class="btn" id="fb-${esc(o.id)}" onclick="bookCarrier('${esc(o.id)}')">📦 Book shipment</button>`}
       <button class="btn${o.bookedAwb?"":" ghost"}" id="ff-${esc(o.id)}" ${o.bookedAwb
         ? `onclick="fulfilOrder('${esc(o.id)}')"`
-        : 'disabled title="Book the shipment with TFM first"'}>✓ Courier collected</button>`
+        : 'disabled title="Book the shipment first"'}>✓ Courier collected</button>`
     : `${o.assignedTo
         ? `<button class="btn" id="ff-${esc(o.id)}" onclick="fulfilOrder('${esc(o.id)}')">✓ Fulfilled</button>`
         : `<button class="btn" disabled title="Allocate this order to a driver or courier first">Allocate first</button>`}
@@ -789,7 +795,7 @@ async function printLabel(id){
     const bytes=Uint8Array.from(atob(r.pdf),c=>c.charCodeAt(0));
     const url=URL.createObjectURL(new Blob([bytes],{type:"application/pdf"}));
     const w=window.open(url,"_blank");
-    if(!w){ const a=document.createElement("a"); a.href=url; a.download="tfm-label-"+(r.awb||id)+".pdf"; a.click(); }
+    if(!w){ const a=document.createElement("a"); a.href=url; a.download="label-"+(r.awb||id)+".pdf"; a.click(); }
     setTimeout(()=>URL.revokeObjectURL(url),60000);
   }catch(e){ toast(e.message); }
   finally{ if(btn){ btn.disabled=false; btn.textContent="🖨 Label"; } }
@@ -878,7 +884,7 @@ async function loadCash(){
       </div>
       <div class="card">
         <h3>Courier COD — waiting for remittance</h3>
-        <p class="hint">Cash TFM collected from customers and still holds. When a remittance arrives, tick the orders it covers${canWrite?" and mark them settled — they are marked paid in Shopify too":""}.</p>
+        <p class="hint">Cash the courier collected from customers and still holds. When a remittance arrives, tick the orders it covers${canWrite?" and mark them settled — they are marked paid in Shopify too":""}.</p>
         ${pending.length?`<div class="scroll"><table><thead><tr><th></th><th>Order</th><th>Delivered</th><th>Amount</th></tr></thead><tbody>${pendRows}</tbody></table></div>
         ${canWrite?`<div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap">
           <b id="codsum">0.00 selected</b>
@@ -1215,15 +1221,15 @@ async function loadAllocate(){
     const active=(dRes.drivers||[]).filter(d=>d.active);
     const orders=oRes.orders||[];
     const el=document.getElementById("alloc");
-    if(!active.length && !CARRIERS.length){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
+    if(!active.length && !CARRIERS.some(c=>c.active)){ el.outerHTML='<div class="empty" id="alloc">Add an active driver first (Drivers tab).</div>'; return; }
     if(!orders.length){ el.outerHTML='<div class="empty" id="alloc">No open orders to allocate.</div>'; return; }
     // Group by the 7 emirates so a driver can be assigned to a whole zone.
     orders.forEach(o=>{ o._em=emirateOf(o); });
     orders.sort((a,b)=> EMIRATE_ORDER.indexOf(a._em)-EMIRATE_ORDER.indexOf(b._em) || (a.city||"").localeCompare(b.city||"") || a.name.localeCompare(b.name));
-    // Couriers (3PL, e.g. TFM Express) allocate like drivers but have no logins:
+    // Couriers (3PL, e.g. swftbox) allocate like drivers but have no logins:
     // dispatch books the shipment with them instead of a driver handover.
     const opts=(sel)=>'<option value="">— Unassigned —</option>'
-      +(CARRIERS.length?'<optgroup label="Couriers">'+CARRIERS.map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
+      +(CARRIERS.some(c=>c.active)?'<optgroup label="Couriers">'+CARRIERS.filter(c=>c.active).map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
       +'<optgroup label="Drivers">'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("")+'</optgroup>';
     const loc=(o)=>{
       const cityBits=[o.city, (o.province&&o.province!==o.city)?o.province:""].filter(Boolean).join(", ");

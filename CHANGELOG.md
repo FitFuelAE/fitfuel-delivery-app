@@ -11,6 +11,18 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-05.2
+- **swftbox replaces TFM Express** as the courier (admin + warehouse consoles).
+  Allocate: 🚛 swftbox under Couriers (TFM is gone from the list). Fulfillment:
+  📦 Book shipment creates the swftbox order + label, 🖨 Label prints it.
+- **Courier pickup is automatic now:** when swftbox scans the parcel, the order is
+  fulfilled and the customer gets "on its way" with swftbox's tracking link — the
+  ✓ Courier collected button is only needed if that hasn't happened yet.
+- Statuses arrive live from swftbox (picked up, at depot, out for delivery,
+  attempted with the driver's reason, delivered, returning). COD delivered by
+  swftbox lands in the Cash tab for settlement, as before.
+- AWB links open swftbox's tracker; old all-digit TFM AWBs still open TFM's.
+
 ## v2026-10-05.1
 - **COD cash can't be skipped any more** (driver app + Orders tab): the cash box
   no longer starts ticked and pre-filled. The driver types the cash collected
