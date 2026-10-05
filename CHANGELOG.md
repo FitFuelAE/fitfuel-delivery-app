@@ -11,6 +11,13 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-05.4
+- Allocate always re-reads the courier list (other tabs every 5 minutes), so a
+  console left open picks up a newly added or switched-on courier.
+- The allocation dropdown always shows the order's current assignee — even a
+  courier or driver switched off since ("… (not active)") — instead of falsely
+  showing "Unassigned", so picking "Unassigned" really unassigns.
+
 ## v2026-10-05.3
 - **TFM Express is back as a backup courier.** Allocate shows both under
   Couriers — 🚛 swftbox and 🚛 TFM Express. Booking, label, cancel-on-unassign

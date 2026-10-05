@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-05.3";
+const APP_VERSION = "2026-10-05.4";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -173,12 +173,13 @@ const rightAtLeast = (cap, level) => {
   const have = ME_RIGHTS[cap];
   return !!have && RANK[have] >= RANK[level || "write"];
 };
-let CARRIERS = [], CARRIERS_LOADED = false;   // 3PL couriers (allocation targets with no logins), retired ones included for history
+let CARRIERS = [], CARRIERS_AT = 0;   // 3PL couriers (allocation targets with no logins), retired ones included for history
 
-async function ensureCarriers(){
-  if(CARRIERS_LOADED) return;
-  try{ const r=await api("/admin/carriers"); CARRIERS=r.carriers||[]; }catch{ CARRIERS=[]; }
-  CARRIERS_LOADED=true;
+// Re-read every few minutes (Allocate always re-reads), so a console left open
+// still learns about a courier added or switched on since it loaded.
+async function ensureCarriers(force=false){
+  if(!force && CARRIERS_AT && Date.now()-CARRIERS_AT < 5*60*1000) return;
+  try{ const r=await api("/admin/carriers"); CARRIERS=r.carriers||[]; CARRIERS_AT=Date.now(); }catch{ if(!CARRIERS_AT) CARRIERS=[]; }
 }
 function carrierName(code){ const c=CARRIERS.find(x=>x.code===code); return c?c.name:String(code||"").toUpperCase(); }
 function isCarrierAssignee(a){ return !!a && a.startsWith("carrier:"); }
@@ -1217,7 +1218,7 @@ async function loadAllocate(){
   const panel=document.getElementById("panel");
   panel.innerHTML='<div class="loading" id="alloc">Loading orders…</div>';
   try{
-    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=unfulfilled"), ensureCarriers()]);
+    const [dRes,oRes]=await Promise.all([api("/admin/drivers"), api("/orders?scope=unfulfilled"), ensureCarriers(true)]);
     const active=(dRes.drivers||[]).filter(d=>d.active);
     const orders=oRes.orders||[];
     const el=document.getElementById("alloc");
@@ -1228,9 +1229,17 @@ async function loadAllocate(){
     orders.sort((a,b)=> EMIRATE_ORDER.indexOf(a._em)-EMIRATE_ORDER.indexOf(b._em) || (a.city||"").localeCompare(b.city||"") || a.name.localeCompare(b.name));
     // Couriers (3PL: swftbox, TFM Express as backup) allocate like drivers but have no logins:
     // dispatch books the shipment with them instead of a driver handover.
-    const opts=(sel)=>'<option value="">— Unassigned —</option>'
-      +(CARRIERS.some(c=>c.active)?'<optgroup label="Couriers">'+CARRIERS.filter(c=>c.active).map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
+    // The order's current assignee is always listed — even a courier or driver
+    // switched off since — so the dropdown never claims "Unassigned" for an
+    // allocated order (and re-picking "Unassigned" really unassigns).
+    const couriers=CARRIERS.filter(c=>c.active);
+    const opts=(sel)=>{
+      const listed=!sel || couriers.some(c=>sel==="carrier:"+c.code) || active.some(d=>sel===d.username);
+      return '<option value="">— Unassigned —</option>'
+      +(listed?'':`<optgroup label="Current"><option value="${esc(sel)}" selected>${esc(assigneeLabel(sel))} (not active)</option></optgroup>`)
+      +(couriers.length?'<optgroup label="Couriers">'+couriers.map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
       +'<optgroup label="Drivers">'+active.map(d=>`<option value="${esc(d.username)}" ${sel===d.username?'selected':''}>${esc(d.name)} (${esc(d.username)})</option>`).join("")+'</optgroup>';
+    };
     const loc=(o)=>{
       const cityBits=[o.city, (o.province&&o.province!==o.city)?o.province:""].filter(Boolean).join(", ");
       return (cityBits||o.area)?`<div style="margin-top:9px;display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center">
