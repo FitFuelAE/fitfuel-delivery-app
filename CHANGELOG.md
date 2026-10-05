@@ -11,6 +11,18 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-05.1
+- **COD cash can't be skipped any more** (driver app + Orders tab): the cash box
+  no longer starts ticked and pre-filled. The driver types the cash collected
+  (or taps **Full amount**), or picks why there was none — already paid another
+  way / customer will pay later / other. Confirm is blocked until one is given,
+  and an amount above what's due asks to double-check.
+- The box now shows for any order Shopify still has as payment pending, not
+  only when the gateway name says COD, and shows the balance due.
+- The backend enforces the same rule from this release, so an old cached app
+  can't close a cash order without an amount or a reason. The reason is saved
+  on the delivery and shows in Summary and Order lookup.
+
 ## v2026-09-13.8
 - The send-test-WhatsApp card is master-only (server-enforced too).
 

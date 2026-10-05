@@ -64,8 +64,11 @@
   .fulfil input[type=file] { width:100%; font-size:14px; }
   .fulfil .preview { display:none; width:100%; max-height:220px; object-fit:cover; border-radius:12px; margin-top:10px; border:1px solid var(--line); }
   .fulfil .cash { margin-top:12px; background:#f3f4f6; border:1px solid #e5e7eb; border-radius:12px; padding:10px 12px; }
-  .fulfil .cash label { display:flex; align-items:center; gap:8px; font-size:15px; font-weight:600; color:var(--green-d); }
-  .fulfil .cash input[type=number] { width:100%; margin-top:8px; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; }
+  .fulfil .cash .due { font-size:15px; font-weight:700; color:var(--green-d); }
+  .fulfil .cash .camt { display:flex; gap:8px; margin-top:8px; }
+  .fulfil .cash .camt input { flex:1; min-width:0; padding:12px; font-size:16px; border:1px solid var(--line); border-radius:10px; }
+  .fulfil .cash .camt button { flex:none; padding:0 14px; font-size:14px; font-weight:700; border:1px solid var(--line); border-radius:10px; background:#fff; color:#111827; }
+  .fulfil .cash select { width:100%; margin-top:8px; padding:12px; font-size:15px; border:1px solid var(--line); border-radius:10px; background:#fff; }
   .fulfil .confirm { margin-top:12px; }
   .geo { font-size:12px; color:var(--muted); margin-top:8px; }
   .geo.off { color:var(--amber); }
@@ -84,7 +87,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-09-13.8";
+const APP_VERSION = "2026-10-05.1";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_token") || "";
 let NAME = localStorage.getItem("ff_name") || "";
@@ -218,10 +221,19 @@ function card(o){
       <label class="fl">Proof of delivery photos (up to 3, required)</label>
       <input type="file" accept="image/*" capture="environment" id="photo-${esc(o.id)}" onchange="onPhoto('${esc(o.id)}')" />
       <div class="thumbs" id="thumbs-${esc(o.id)}" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div>
-      ${o.cod ? `<div class="cash">
-        <label><input type="checkbox" id="cash-${esc(o.id)}" checked /> Cash received (COD)</label>
-        <input type="number" inputmode="decimal" step="0.01" id="camt-${esc(o.id)}" value="${esc(o.amount)}" />
-        <div style="font-size:12px;color:#000000;margin-top:6px">Enter the actual cash collected — less than the total records a partial payment.</div>
+      ${cashDueOf(o) ? `<div class="cash">
+        <div class="due">💵 Cash to collect: ${esc(cash2(cashDueOf(o)))} ${esc(o.currency||"AED")}</div>
+        <div class="camt">
+          <input type="number" inputmode="decimal" step="0.01" min="0" id="camt-${esc(o.id)}" placeholder="Cash collected" oninput="cashPicked('${esc(o.id)}','amt')" />
+          <button type="button" onclick="cashFull('${esc(o.id)}')">Full amount</button>
+        </div>
+        <select id="cwhy-${esc(o.id)}" onchange="cashPicked('${esc(o.id)}','why')">
+          <option value="">No cash collected? Pick why…</option>
+          <option value="paid_other">Already paid another way</option>
+          <option value="pay_later">Customer will pay later</option>
+          <option value="other">Other (tell the office)</option>
+        </select>
+        <div style="font-size:12px;color:#000000;margin-top:6px">Type the cash you actually collected — less than the amount due records a partial payment.</div>
       </div>` : ""}
       <div class="geo" id="geo-${esc(o.id)}"></div>
       <button class="btn confirm" id="cfm-${esc(o.id)}" onclick="confirmFulfill('${esc(o.id)}')">Confirm delivery</button>
@@ -316,18 +328,47 @@ async function onPhoto(id){
   finally{ inp.value=""; }   // reset so the camera can be opened again
 }
 
+// ---- COD cash: nothing is pre-filled, so a delivery can't close on a default.
+// The driver types what they took (or taps Full amount), or says why there was none.
+function cash2(n){ return (Math.round(Number(n||0)*100)/100).toFixed(2); }
+function cashDueOf(o){
+  if(o.cashDue!=null) return o.cashDue ? Number(o.outstanding||0) : 0;
+  return o.cod ? Number(o.amount||0) : 0;   // older API without cashDue
+}
+function cashPicked(id,which){
+  const other=document.getElementById((which==="amt"?"cwhy-":"camt-")+id);
+  if(other) other.value="";
+}
+function cashFull(id){
+  const el=document.getElementById("camt-"+id);
+  el.value=cash2(cashDueOf(ORDERS[id]||{})); cashPicked(id,"amt");
+}
+// The cash part of a /deliver body, or null (after telling the user) when it's missing.
+function cashFields(id){
+  const amtEl=document.getElementById("camt-"+id);
+  if(!amtEl) return {cashCollected:false,cashAmount:null};
+  const amt=Number(amtEl.value||0), why=document.getElementById("cwhy-"+id).value;
+  const due=cashDueOf(ORDERS[id]||{});
+  if(amt>0){
+    if(amt>due+0.01 && !confirm(`Collected ${cash2(amt)} — that's more than the ${cash2(due)} due. Is that right?`)) return null;
+    return {cashCollected:true,cashAmount:Math.round(amt*100)/100};
+  }
+  if(why) return {cashCollected:false,cashAmount:null,noCashReason:why};
+  toast("Enter the cash you collected, or pick why there was none");
+  amtEl.focus(); return null;
+}
+
 async function confirmFulfill(id){
   if(!(PHOTOS[id]&&PHOTOS[id].length)){ toast("Please add at least one proof photo"); return; }
   const btn=document.getElementById("cfm-"+id);
-  if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
-  const codCheck=document.getElementById("cash-"+id);
-  const cashCollected=codCheck?codCheck.checked:false;
-  const amtEl=document.getElementById("camt-"+id);
-  const cashAmount=cashCollected&&amtEl?Number(amtEl.value||0):null;
+  if(btn&&btn.disabled) return;
+  const cash=cashFields(id);
+  if(!cash) return;
+  if(btn){ btn.disabled=true; btn.textContent="Working…"; }
   const cardEl=document.getElementById("card-"+id); cardEl.classList.add("fade");
   try{
     const r = await api("/deliver",{method:"POST",body:JSON.stringify({
-      orderGid:id, photos:PHOTOS[id], cashCollected, cashAmount,
+      orderGid:id, photos:PHOTOS[id], ...cash,
       lat:CURRENT_POS?CURRENT_POS.lat:null, lng:CURRENT_POS?CURRENT_POS.lng:null, accuracy:CURRENT_POS?CURRENT_POS.acc:null
     })});
     const warns=[];
