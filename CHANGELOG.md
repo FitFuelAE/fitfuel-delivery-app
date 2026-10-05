@@ -11,6 +11,12 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-05.3
+- **TFM Express is back as a backup courier.** Allocate shows both under
+  Couriers — 🚛 swftbox and 🚛 TFM Express. Booking, label, cancel-on-unassign
+  and tracking work the same for either; TFM pickups are detected automatically
+  too (within 10 minutes, as TFM has no live updates).
+
 ## v2026-10-05.2
 - **swftbox replaces TFM Express** as the courier (admin + warehouse consoles).
   Allocate: 🚛 swftbox under Couriers (TFM is gone from the list). Fulfillment:

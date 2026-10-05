@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-05.2";
+const APP_VERSION = "2026-10-05.3";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -185,7 +185,7 @@ function isCarrierAssignee(a){ return !!a && a.startsWith("carrier:"); }
 // "carrier:swftbox" -> "🚛 swftbox"; "raj" -> "🚚 raj" (pills + group headers).
 function assigneeLabel(a){ return isCarrierAssignee(a) ? "🚛 "+carrierName(a.slice(8)) : "🚚 "+a; }
 // Courier's public tracker. swftbox numbers mix letters and digits (HJVMU27811);
-// all-digit AWBs are history from TFM Express (retired 2026-10).
+// TFM Express (backup courier) AWBs are all digits (971701463806).
 function trackUrl(awb){
   const a=String(awb||"").trim();
   return /^\d+$/.test(a)
@@ -1226,7 +1226,7 @@ async function loadAllocate(){
     // Group by the 7 emirates so a driver can be assigned to a whole zone.
     orders.forEach(o=>{ o._em=emirateOf(o); });
     orders.sort((a,b)=> EMIRATE_ORDER.indexOf(a._em)-EMIRATE_ORDER.indexOf(b._em) || (a.city||"").localeCompare(b.city||"") || a.name.localeCompare(b.name));
-    // Couriers (3PL, e.g. swftbox) allocate like drivers but have no logins:
+    // Couriers (3PL: swftbox, TFM Express as backup) allocate like drivers but have no logins:
     // dispatch books the shipment with them instead of a driver handover.
     const opts=(sel)=>'<option value="">— Unassigned —</option>'
       +(CARRIERS.some(c=>c.active)?'<optgroup label="Couriers">'+CARRIERS.filter(c=>c.active).map(c=>`<option value="carrier:${esc(c.code)}" ${sel==="carrier:"+c.code?'selected':''}>🚛 ${esc(c.name)}</option>`).join("")+'</optgroup>':'')
