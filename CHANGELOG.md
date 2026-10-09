@@ -11,6 +11,13 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-09.1
+- New **WhatsApp** tab (support capability): the support-number assistant's
+  drafts next to what staff actually replied, 👍/👎 review, Off / Shadow / Live
+  switch, per-chat pause/resume, and the store facts it may quote. Backend
+  (`wa-agent` + migration) is live; the assistant stays dormant until its
+  secrets are set and the number is onboarded to WhatsApp coexistence.
+
 ## v2026-10-05.4
 - Allocate always re-reads the courier list (other tabs every 5 minutes), so a
   console left open picks up a newly added or switched-on courier.

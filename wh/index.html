@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-05.4";
+const APP_VERSION = "2026-10-09.1";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -268,6 +268,7 @@ function renderApp(){
     ...(hasCap("activity")      ? [{id:"activity",    label:"Activity"}]        : []),
     ...(hasCap("drivers.manage")? [{id:"drivers",     label:"Drivers"}]         : []),
     ...(hasCap("staff.manage")  ? [{id:"people",      label:"People"}]          : []),
+    ...(hasCap("support")       ? [{id:"wa",          label:"WhatsApp"}]        : []),
   ];
   root.innerHTML = `
    <header>
@@ -303,6 +304,7 @@ function renderApp(){
   else if(TAB==="people") loadPeople();
   else if(TAB==="cash") loadCash();
   else if(TAB==="summary") loadSummary();
+  else if(TAB==="wa") loadWa();
   else loadActivity();
 }
 
@@ -488,6 +490,7 @@ const CAP_LABELS = {
   "activity":       "Activity log",
   "drivers.manage": "Manage drivers",
   "staff.manage":   "Manage people & rights",
+  "support":        "WhatsApp assistant",
 };
 const LEVEL_LABELS = { read:"Read", write:"Write", edit:"Edit" };
 let CAPS_LIST = Object.keys(CAP_LABELS);      // replaced by whatever the server
@@ -924,6 +927,139 @@ async function settleCod(){
   }catch(e){ toast(e.message); }
 }
 window.loadCash=loadCash; window.recordHandover=recordHandover; window.settleCod=settleCod; window.codTotal=codTotal;
+
+// ---- WhatsApp agent ----
+// What the assistant said on the support number — or, in shadow mode, what it
+// would have said — next to what staff actually replied. Judge it here before
+// letting it talk to customers.
+let WA_FILTER = "";
+const WA_MODE_HINT = {
+  off:    "Messages are logged; the assistant drafts nothing.",
+  shadow: "The assistant drafts a reply to every customer message but sends nothing — customers only ever see your replies. Review the drafts below.",
+  live:   "The assistant replies to customers. When you reply from the phone it steps back from that chat; anything it can't answer comes to you with a notification.",
+};
+const WA_REASON = { no_answer:"no answer found", action_needed:"needs an action", complaint:"complaint", asked_for_human:"asked for a person",
+  order_not_found:"order not found", wholesale:"wholesale", health:"health question", unreadable:"couldn't read it", model_declined:"declined", other:"other" };
+
+async function loadWa(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML='<div class="loading" id="wabody">Loading…</div>';
+  const canWrite=rightAtLeast("support","write"), canEdit=rightAtLeast("support","edit");
+  try{
+    const [d, f] = await Promise.all([
+      api("/admin/wa-agent?filter="+encodeURIComponent(WA_FILTER)),
+      api("/admin/wa-faq"),
+    ]);
+    const mode=d.settings.mode, w=d.week;
+    const reviewed=w.good+w.bad;
+    const warn=[
+      !d.configured.claude ? "ANTHROPIC_API_KEY isn't set — the assistant can't run." : "",
+      !d.configured.whatsapp ? "WhatsApp sending isn't configured (WA_TOKEN) — live mode can't send." : "",
+    ].filter(Boolean);
+    const modeBtns=["off","shadow","live"].map(m=>
+      `<button class="lvl ${mode===m?"on":""}" ${canEdit?`onclick="waSetMode('${m}')"`:"disabled"}>${m==="off"?"Off":m==="shadow"?"Shadow (review)":"Live"}</button>`).join("");
+
+    const runs=(d.runs||[]).map(r=>{
+      const who=r.name?`${esc(r.name)} · +${esc(r.wa_id)}`:`+${esc(r.wa_id)}`;
+      const paused=r.pausedUntil && new Date(r.pausedUntil)>new Date();
+      const tools=(r.tool_calls||[]).filter(t=>!["handoff_to_staff","no_reply_needed"].includes(t.name));
+      const reply = r.error && !r.reply ? `<span style="color:var(--red)">⚠️ ${esc(r.error)}</span>`
+        : r.reply ? esc(r.reply).replace(/\n/g,"<br>") : '<i style="color:var(--muted)">— no reply needed</i>';
+      return `<div class="card" style="padding:14px">
+        <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center">
+          <b>${who}</b>
+          <span class="hint" style="margin:0">${fmtTime(r.created_at)} · <span class="pill status">${esc(r.mode)}${r.sent?" · sent":""}</span>${paused?' <span class="pill off">paused</span>':""}</span>
+        </div>
+        <div style="margin-top:10px"><div class="hint" style="font-weight:700;margin:0">Customer</div>
+          ${(r.asked||[]).map(a=>`<div style="padding:2px 0">${esc(a)}</div>`).join("")||'<div class="hint">—</div>'}</div>
+        <div style="margin-top:10px;background:#f3f4f6;border-radius:10px;padding:10px">
+          <div class="hint" style="font-weight:700;margin:0 0 4px">${r.mode==="live"?"Assistant":"Assistant would say"}${r.handoff?` · <span style="color:var(--amber)">🙋 handed to staff (${esc(WA_REASON[(r.handoff_reason||"").split(" — ")[0]]||"other")})</span>`:""}</div>
+          ${reply}
+          ${r.handoff&&r.handoff_reason&&r.handoff_reason.includes(" — ")?`<div class="hint" style="margin:6px 0 0">Note for staff: ${esc(r.handoff_reason.split(" — ").slice(1).join(" — "))}</div>`:""}
+        </div>
+        ${r.staffReply?`<div style="margin-top:10px"><div class="hint" style="font-weight:700;margin:0">You replied · ${fmtTime(r.staffReply.at)}</div>${esc(r.staffReply.body).replace(/\n/g,"<br>")}</div>`:""}
+        ${tools.length?`<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Looked up: ${tools.map(t=>esc(t.name.replace(/_/g," "))+(t.ok?"":" ⚠️")).join(", ")}</summary>
+          ${tools.map(t=>`<pre style="white-space:pre-wrap;font-size:12px;background:#f9fafb;border-radius:8px;padding:8px;margin:6px 0">${esc(t.name)} ${esc(JSON.stringify(t.input))}\n→ ${esc(t.result)}</pre>`).join("")}</details>`:""}
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center">
+          ${canWrite?`
+            <button class="btn sm ${r.verdict==="good"?"":"ghost"}" onclick="waVerdict('${esc(r.id)}','${r.verdict==="good"?"":"good"}')">👍 Right</button>
+            <button class="btn sm ${r.verdict==="bad"?"":"ghost"}" onclick="waVerdict('${esc(r.id)}','${r.verdict==="bad"?"":"bad"}')">👎 Wrong</button>
+            ${mode==="live"?(paused
+              ?`<button class="btn sm ghost" onclick="waPause('${esc(r.wa_id)}',0)">▶︎ Resume assistant</button>`
+              :`<button class="btn sm ghost" onclick="waPause('${esc(r.wa_id)}',24)">⏸ Pause 24h</button>`):""}`
+            :(r.verdict?`<span class="pill status">${r.verdict==="good"?"👍 right":"👎 wrong"}</span>`:"")}
+          ${r.verdict_note?`<span class="hint" style="margin:0">“${esc(r.verdict_note)}” — ${esc(r.verdict_by||"")}</span>`:""}
+        </div>
+      </div>`;
+    }).join("");
+
+    const faq=(f.faq||[]).map(x=>`<div style="border-top:1px solid var(--line);padding:10px 0;${x.active?"":"opacity:.5"}">
+        <div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(x.topic)}</b>
+          ${canEdit?`<span style="display:flex;gap:6px"><button class="btn sm ghost" onclick="waFaqEdit('${esc(x.id)}')">Edit</button><button class="btn sm danger" onclick="waFaqDelete('${esc(x.id)}')">Delete</button></span>`:""}</div>
+        <div style="margin-top:4px">${esc(x.answer).replace(/\n/g,"<br>")}</div>
+      </div>`).join("");
+    window.WA_FAQ=f.faq||[];
+
+    document.getElementById("wabody").outerHTML=`<div id="wabody">
+      <div class="card">
+        <h3>WhatsApp assistant · +971 55 601 9199</h3>
+        <p class="hint">${esc(WA_MODE_HINT[mode])}</p>
+        <div class="levels" style="margin:10px 0">${modeBtns}</div>
+        ${warn.map(x=>`<div class="hint" style="color:var(--red)">⚠️ ${esc(x)}</div>`).join("")}
+        <div class="hint">Last 7 days: <b>${w.runs}</b> replies considered · <b>${w.handoffs}</b> handed to staff${reviewed?` · reviewed ${reviewed}: <b>${Math.round(100*w.good/reviewed)}%</b> right`:""}</div>
+      </div>
+      <div class="tabs" style="margin-bottom:12px">
+        ${[["","All"],["unreviewed","Not reviewed"],["handoff","Handed to staff"],["bad","Marked wrong"]].map(([k,l])=>
+          `<button class="${WA_FILTER===k?"on":""}" onclick="WA_FILTER='${k}';loadWa()">${l}</button>`).join("")}
+      </div>
+      ${runs||'<div class="empty">Nothing yet — drafts appear here as customers message the support number.</div>'}
+      <div class="card">
+        <h3>Store facts the assistant may quote</h3>
+        <p class="hint">Product prices, stock, orders and the website's shipping & refund policies are looked up live. Add anything else customers ask about — delivery cut-off times, areas, COD, store hours, how to order. If it isn't here or on the website, the assistant hands the chat to you.</p>
+        ${faq||'<div class="hint">No facts yet.</div>'}
+        ${canEdit?`<div style="border-top:1px solid var(--line);padding-top:6px">
+          <input type="hidden" id="faqid" />
+          <label>Topic</label><input id="faqtopic" placeholder="e.g. Delivery cut-off" maxlength="80" />
+          <label>Answer</label><textarea id="faqanswer" maxlength="1500" placeholder="e.g. Orders before 2pm are delivered the same day in Dubai and Sharjah." style="width:100%;min-height:80px;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit"></textarea>
+          <div style="display:flex;gap:8px"><button class="btn" id="faqsave" onclick="waFaqSave()">Add fact</button><button class="btn ghost" onclick="waFaqReset()">Clear</button></div>
+        </div>`:""}
+      </div>
+    </div>`;
+  }catch(e){ const el=document.getElementById("wabody"); if(el) el.outerHTML='<div class="empty" id="wabody">'+esc(e.message)+'</div>'; }
+}
+async function waSetMode(mode){
+  if(mode==="live" && !confirm("Go live? The assistant will start replying to customers on +971 55 601 9199. Make sure Meta AI is turned off in the WhatsApp Business app first.")) return;
+  try{ await api("/admin/wa-settings",{method:"POST",body:JSON.stringify({mode})}); toast("Assistant: "+mode); loadWa(); }catch(e){ toast(e.message); }
+}
+async function waVerdict(id, verdict){
+  let note="";
+  if(verdict==="bad") note=prompt("What was wrong? (optional — helps tune it)")||"";
+  try{ await api("/admin/wa-verdict",{method:"POST",body:JSON.stringify({id, verdict: verdict||null, note})}); loadWa(); }catch(e){ toast(e.message); }
+}
+async function waPause(waId, hours){
+  try{ await api("/admin/wa-pause",{method:"POST",body:JSON.stringify({waId, hours})}); toast(hours?"Paused on this chat for "+hours+"h":"Assistant resumed on this chat"); loadWa(); }catch(e){ toast(e.message); }
+}
+function waFaqEdit(id){
+  const x=(window.WA_FAQ||[]).find(f=>f.id===id); if(!x) return;
+  document.getElementById("faqid").value=x.id; document.getElementById("faqtopic").value=x.topic; document.getElementById("faqanswer").value=x.answer;
+  document.getElementById("faqsave").textContent="Save fact"; document.getElementById("faqtopic").focus();
+}
+function waFaqReset(){
+  document.getElementById("faqid").value=""; document.getElementById("faqtopic").value=""; document.getElementById("faqanswer").value="";
+  document.getElementById("faqsave").textContent="Add fact";
+}
+async function waFaqSave(){
+  const id=document.getElementById("faqid").value||undefined;
+  const topic=document.getElementById("faqtopic").value.trim(), answer=document.getElementById("faqanswer").value.trim();
+  if(!topic||!answer){ toast("Enter a topic and an answer"); return; }
+  try{ await api("/admin/wa-faq",{method:"POST",body:JSON.stringify({id, topic, answer})}); toast("✓ Saved"); loadWa(); }catch(e){ toast(e.message); }
+}
+async function waFaqDelete(id){
+  if(!confirm("Delete this fact? The assistant will stop quoting it.")) return;
+  try{ await api("/admin/wa-faq",{method:"POST",body:JSON.stringify({id, delete:true})}); toast("Deleted"); loadWa(); }catch(e){ toast(e.message); }
+}
+window.loadWa=loadWa; window.waSetMode=waSetMode; window.waVerdict=waVerdict; window.waPause=waPause;
+window.waFaqEdit=waFaqEdit; window.waFaqReset=waFaqReset; window.waFaqSave=waFaqSave; window.waFaqDelete=waFaqDelete;
 
 async function loadOrders(){
   document.getElementById("panel").innerHTML='<div class="loading" id="olist">Loading orders…</div>';
