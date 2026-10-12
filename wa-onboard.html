@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>FitFuel — WhatsApp coexistence onboarding</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f6f8;color:#111827;max-width:640px;margin:40px auto;padding:0 20px}
+  h1{font-size:22px} .hint{color:#6b7280;font-size:14px;line-height:1.5}
+  button{background:#111;color:#fff;border:none;border-radius:12px;padding:14px 22px;font-size:16px;font-weight:700;cursor:pointer;margin:16px 0}
+  button:disabled{opacity:.5}
+  pre{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:14px;font-size:13px;white-space:pre-wrap;word-break:break-all}
+  .ok{color:#047857;font-weight:700}.err{color:#dc2626;font-weight:700}
+</style>
+</head>
+<body>
+<h1>WhatsApp coexistence onboarding</h1>
+<p class="hint">
+  One-time use, run by the owner. Launches Meta's Embedded Signup for the flow that
+  <b>keeps the WhatsApp Business app working</b> ("onboard WhatsApp Business app users").
+  During the flow: pick <b>Samara General Trading</b>, enter the support number
+  <b>+971&nbsp;55&nbsp;601&nbsp;9199</b>, choose the option that keeps using the app, and scan the
+  QR from the phone's WhatsApp Business app. Make sure Meta AI is already OFF in the app.
+</p>
+<p class="hint" id="cfg"></p>
+<button id="go" disabled>Launch WhatsApp onboarding</button>
+<h3>Result</h3>
+<pre id="out">Waiting…</pre>
+<p class="hint">When it finishes, copy the <b>phone_number_id</b> (needed as the
+WA_PHONE_NUMBER_ID secret) and the waba_id, and send them to Claude.</p>
+
+<script>
+  // Usage: wa-embedded-signup.html?app_id=META_APP_ID&config_id=LOGIN_CONFIG_ID
+  // app_id: the Meta app. config_id: Facebook Login for Business → Configurations →
+  // the "WhatsApp Embedded Signup" configuration's id.
+  const q = new URLSearchParams(location.search);
+  const APP_ID = q.get("app_id") || "";
+  const CONFIG_ID = q.get("config_id") || "";
+  const out = (m, cls) => { const el = document.getElementById("out");
+    el.innerHTML += (cls ? `<span class="${cls}">${m}</span>` : m) + "\n"; };
+
+  document.getElementById("cfg").textContent =
+    APP_ID && CONFIG_ID ? `App ${APP_ID} · config ${CONFIG_ID}`
+      : "Missing ?app_id= and/or ?config_id= in the URL — add them and reload.";
+
+  // Meta posts progress/result messages from the signup popup. The FINISH event
+  // carries the ids we need.
+  window.addEventListener("message", (event) => {
+    if (!String(event.origin).endsWith("facebook.com")) return;
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === "WA_EMBEDDED_SIGNUP") {
+        out("event: " + JSON.stringify(data.data || data, null, 2),
+          (data.data && data.data.phone_number_id) ? "ok" : "");
+      }
+    } catch { /* non-JSON messages from FB are routine */ }
+  });
+
+  window.fbAsyncInit = function () {
+    FB.init({ appId: APP_ID, autoLogAppEvents: true, xfbml: true, version: "v26.0" });
+    if (APP_ID && CONFIG_ID) document.getElementById("go").disabled = false;
+  };
+
+  document.getElementById("go").onclick = () => {
+    document.getElementById("out").textContent = "";
+    FB.login((response) => {
+      if (response.authResponse && response.authResponse.code) {
+        out("auth code received (not needed for the own-business token path).", "ok");
+      } else {
+        out("Login dialog closed: " + JSON.stringify(response.status), "err");
+      }
+    }, {
+      config_id: CONFIG_ID,
+      response_type: "code",
+      override_default_response_type: true,
+      extras: {
+        // The coexistence flow — number stays registered in the Business app.
+        featureType: "whatsapp_business_app_onboarding",
+        sessionInfoVersion: "3",
+        setup: {},
+      },
+    });
+  };
+</script>
+<script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+</body>
+</html>
