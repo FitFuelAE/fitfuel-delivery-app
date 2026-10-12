@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-09.1";
+const APP_VERSION = "2026-10-12.1";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -932,7 +932,7 @@ window.loadCash=loadCash; window.recordHandover=recordHandover; window.settleCod
 // What the assistant said on the support number — or, in shadow mode, what it
 // would have said — next to what staff actually replied. Judge it here before
 // letting it talk to customers.
-let WA_FILTER = "";
+let WA_FILTER = "", WA_VIEW = "chats";
 const WA_MODE_HINT = {
   off:    "Messages are logged; the assistant drafts nothing.",
   shadow: "The assistant drafts a reply to every customer message but sends nothing — customers only ever see your replies. Review the drafts below.",
@@ -993,12 +993,32 @@ async function loadWa(){
       </div>`;
     }).join("");
 
-    const faq=(f.faq||[]).map(x=>`<div style="border-top:1px solid var(--line);padding:10px 0;${x.active?"":"opacity:.5"}">
-        <div style="display:flex;justify-content:space-between;gap:8px"><b>${esc(x.topic)}</b>
-          ${canEdit?`<span style="display:flex;gap:6px"><button class="btn sm ghost" onclick="waFaqEdit('${esc(x.id)}')">Edit</button><button class="btn sm danger" onclick="waFaqDelete('${esc(x.id)}')">Delete</button></span>`:""}</div>
-        <div style="margin-top:4px">${esc(x.answer).replace(/\n/g,"<br>")}</div>
-      </div>`).join("");
+    const faq=(f.faq||[]).map(x=>`<details style="border-top:1px solid var(--line);${x.active?"":"opacity:.5"}">
+        <summary style="padding:10px 0;cursor:pointer;font-weight:700">${esc(x.topic)}</summary>
+        <div style="padding:0 2px 12px">${esc(x.answer).replace(/\n/g,"<br>")}
+          ${canEdit?`<div style="display:flex;gap:6px;margin-top:8px"><button class="btn sm ghost" onclick="waFaqEdit('${esc(x.id)}')">Edit</button><button class="btn sm danger" onclick="waFaqDelete('${esc(x.id)}')">Delete</button></div>`:""}
+        </div>
+      </details>`).join("");
     window.WA_FAQ=f.faq||[];
+
+    const chatsView=`
+      <div class="tabs" style="margin-bottom:12px">
+        ${[["","All"],["unreviewed","Not reviewed"],["handoff","Handed to staff"],["bad","Marked wrong"]].map(([k,l])=>
+          `<button class="${WA_FILTER===k?"on":""}" onclick="WA_FILTER='${k}';loadWa()">${l}</button>`).join("")}
+      </div>
+      ${runs||'<div class="empty">Nothing yet — drafts appear here as customers message the support number.</div>'}`;
+
+    const factsView=`<div class="card">
+        <h3>Store facts the assistant may quote</h3>
+        <p class="hint">Product prices, stock, orders and the website's shipping & refund policies are looked up live — no need to repeat them here. Add everything else customers ask about, and rules for how the assistant should behave. If it isn't here or on the website, the assistant hands the chat to you. Tap a topic to read it.</p>
+        ${canEdit?`<div style="border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:2px">
+          <input type="hidden" id="faqid" />
+          <label>Topic</label><input id="faqtopic" placeholder="e.g. Delivery cut-off" maxlength="80" />
+          <label>Answer</label><textarea id="faqanswer" maxlength="1500" placeholder="e.g. Orders before 2pm are delivered the same day in Dubai and Sharjah." style="width:100%;min-height:80px;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit"></textarea>
+          <div style="display:flex;gap:8px"><button class="btn" id="faqsave" onclick="waFaqSave()">Add fact</button><button class="btn ghost" onclick="waFaqReset()">Clear</button></div>
+        </div>`:""}
+        ${faq||'<div class="hint">No facts yet.</div>'}
+      </div>`;
 
     document.getElementById("wabody").outerHTML=`<div id="wabody">
       <div class="card">
@@ -1009,21 +1029,10 @@ async function loadWa(){
         <div class="hint">Last 7 days: <b>${w.runs}</b> replies considered · <b>${w.handoffs}</b> handed to staff${reviewed?` · reviewed ${reviewed}: <b>${Math.round(100*w.good/reviewed)}%</b> right`:""}</div>
       </div>
       <div class="tabs" style="margin-bottom:12px">
-        ${[["","All"],["unreviewed","Not reviewed"],["handoff","Handed to staff"],["bad","Marked wrong"]].map(([k,l])=>
-          `<button class="${WA_FILTER===k?"on":""}" onclick="WA_FILTER='${k}';loadWa()">${l}</button>`).join("")}
+        <button class="${WA_VIEW==="chats"?"on":""}" onclick="WA_VIEW='chats';loadWa()">💬 Conversations</button>
+        <button class="${WA_VIEW==="facts"?"on":""}" onclick="WA_VIEW='facts';loadWa()">📚 Store facts (${(f.faq||[]).length})</button>
       </div>
-      ${runs||'<div class="empty">Nothing yet — drafts appear here as customers message the support number.</div>'}
-      <div class="card">
-        <h3>Store facts the assistant may quote</h3>
-        <p class="hint">Product prices, stock, orders and the website's shipping & refund policies are looked up live. Add anything else customers ask about — delivery cut-off times, areas, COD, store hours, how to order. If it isn't here or on the website, the assistant hands the chat to you.</p>
-        ${faq||'<div class="hint">No facts yet.</div>'}
-        ${canEdit?`<div style="border-top:1px solid var(--line);padding-top:6px">
-          <input type="hidden" id="faqid" />
-          <label>Topic</label><input id="faqtopic" placeholder="e.g. Delivery cut-off" maxlength="80" />
-          <label>Answer</label><textarea id="faqanswer" maxlength="1500" placeholder="e.g. Orders before 2pm are delivered the same day in Dubai and Sharjah." style="width:100%;min-height:80px;border:1px solid var(--line);border-radius:12px;padding:12px;font-size:16px;font-family:inherit"></textarea>
-          <div style="display:flex;gap:8px"><button class="btn" id="faqsave" onclick="waFaqSave()">Add fact</button><button class="btn ghost" onclick="waFaqReset()">Clear</button></div>
-        </div>`:""}
-      </div>
+      ${WA_VIEW==="facts"?factsView:chatsView}
     </div>`;
   }catch(e){ const el=document.getElementById("wabody"); if(el) el.outerHTML='<div class="empty" id="wabody">'+esc(e.message)+'</div>'; }
 }

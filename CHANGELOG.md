@@ -11,6 +11,12 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-12.1
+- WhatsApp tab split into two clean views — **💬 Conversations** (with the
+  review filters) and **📚 Store facts (N)** — instead of one long page.
+  Facts are now collapsible: tap a topic to read or edit it; the add-fact
+  form sits at the top of the facts view.
+
 ## v2026-10-09.1
 - New **WhatsApp** tab (support capability): the support-number assistant's
   drafts next to what staff actually replied, 👍/👎 review, Off / Shadow / Live
