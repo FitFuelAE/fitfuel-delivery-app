@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-12.1";
+const APP_VERSION = "2026-10-13.1";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -986,7 +986,7 @@ async function loadWa(){
             <button class="btn sm ${r.verdict==="bad"?"":"ghost"}" onclick="waVerdict('${esc(r.id)}','${r.verdict==="bad"?"":"bad"}')">👎 Wrong</button>
             ${mode==="live"?(paused
               ?`<button class="btn sm ghost" onclick="waPause('${esc(r.wa_id)}',0)">▶︎ Resume assistant</button>`
-              :`<button class="btn sm ghost" onclick="waPause('${esc(r.wa_id)}',24)">⏸ Pause 24h</button>`):""}`
+              :`<button class="btn sm ghost" onclick="waPause('${esc(r.wa_id)}',1)">⏸ Pause 1h</button>`):""}`
             :(r.verdict?`<span class="pill status">${r.verdict==="good"?"👍 right":"👎 wrong"}</span>`:"")}
           ${r.verdict_note?`<span class="hint" style="margin:0">“${esc(r.verdict_note)}” — ${esc(r.verdict_by||"")}</span>`:""}
         </div>

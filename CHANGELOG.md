@@ -11,6 +11,13 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-13.1
+- WhatsApp assistant handling the human-takeover gentler: when a person is on a
+  chat (replied from the phone, or the assistant handed it over) it steps back,
+  sends the waiting customer one "team is busy, back shortly" note after 15 min,
+  and takes the chat back after 30 min of no human reply — instead of going
+  silent for hours. The per-chat manual **Pause** button is now **1h** (was 24h).
+
 ## v2026-10-12.1
 - WhatsApp tab split into two clean views — **💬 Conversations** (with the
   review filters) and **📚 Store facts (N)** — instead of one long page.
