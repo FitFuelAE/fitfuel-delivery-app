@@ -11,6 +11,14 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-10-17.1
+- WhatsApp tab: new **🧠 Suggestions (N)** view. The assistant watches the chats
+  it couldn't answer (no-answer hand-offs and replies you marked wrong), and a
+  **Scan** clusters the recurring gaps into drafted store facts — each with the
+  evidence and an example question — for you to **Approve**, **Edit**, or
+  **Dismiss**. Nothing reaches the knowledge base until you Approve; the
+  assistant never edits its own facts, and dismissed suggestions don't come back.
+
 ## v2026-10-13.1
 - WhatsApp assistant handling the human-takeover gentler: when a person is on a
   chat (replied from the phone, or the assistant handed it over) it steps back,
