@@ -150,7 +150,7 @@
 
 <script>
 const API = "https://febchdwrgrwlfwisnnzi.supabase.co/functions/v1/api";
-const APP_VERSION = "2026-10-24.1";
+const APP_VERSION = "2026-11-05.1";
 const root = document.getElementById("root");
 let TOKEN = localStorage.getItem("ff_admin_token") || "";
 let NAME = localStorage.getItem("ff_admin_name") || "";
@@ -473,11 +473,26 @@ async function lookupOrder(){
             ${ev.note?`<div class="hint">📝 ${esc(ev.note)}</div>`:""}
           </div>
         </div>`).join("")}
+        ${(o.notifications&&o.notifications.length)?`<div style="margin-top:10px">
+          <div class="hint" style="margin-bottom:4px">📲 WhatsApp notifications</div>
+          ${o.notifications.map(waNotifRow).join("")}
+        </div>`:""}
       </div>`;
     }).join("");
   }catch(e){ res.innerHTML='<div class="hint" style="padding:10px 0">'+esc(e.message)+'</div>'; }
 }
 window.lookupOrder=lookupOrder;
+
+function waNotifRow(n){
+  const label={confirmation:"Order confirmation",otw:"On its way",delivered:"Delivered",issue:"Issue"}[n.kind]||n.kind;
+  const st=(n.status||"").toLowerCase();
+  const icon=(st==="read"||st==="delivered")?"✓":(st==="failed"||st==="undelivered")?"⚠":"·";
+  const detail=st+(n.error_code?` ${esc(n.error_code)}`:"")+(n.error?` ${esc(n.error)}`:"");
+  return `<div class="hint" style="display:flex;justify-content:space-between;gap:10px">
+    <span>${icon} ${esc(label)}</span>
+    <span>${esc(detail)} · ${fmtTime(n.created_at)}</span>
+  </div>`;
+}
 
 function activityRow(a){
   return `<tr>

@@ -11,6 +11,16 @@ node scripts/stamp-version.mjs        # stamps APP_VERSION + service-worker cach
 (`name · vYYYY-MM-DD.N`), so "which build is this phone on?" is answerable at
 a glance.
 
+## v2026-11-05.1
+- **Order lookup now shows each order's WhatsApp notifications.** Search an order
+  in Activity and, beside the delivery history, see the order-update messages sent
+  to the customer — order confirmation, on its way, delivered, issue — each with
+  its delivery status (✓ read/delivered, ⚠ failed, · in flight) and time. Backed
+  by a new `wa_notifications` log: the Twilio order-update sends were previously
+  fire-and-forget with no record of what a customer received; now every send is
+  logged and Twilio's delivered/read callbacks are stamped onto it. Orders with
+  notifications but no delivery row yet show up too.
+
 ## v2026-10-24.1
 - The master-only "Send a test WhatsApp" card can now test the **Delivered**
   template too (📦 Delivered), alongside 📲 On its way — so you can see the
