@@ -61,6 +61,9 @@
   .pill.off { background:#fee2e2; color:var(--red); }
   .pill.status { background:#f3f4f6; color:#374151; }
   .pill.master { background:#111111; color:#ffffff; }
+  .pill.ok { background:#dcfce7; color:#166534; }
+  .pill.warn { background:#fef3c7; color:#92400e; }
+  .pill.bad { background:#fee2e2; color:#b91c1c; }
 
   /* Order cards (mirror the driver app) */
   .ocard { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
@@ -741,6 +744,18 @@ async function loadFulfillList(){
   }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
 }
 
+// Number-verification badge. Shown only when it's actionable: positive (confirmed)
+// or a warning (bad / no number / not mobile). A valid-but-unconfirmed number — the
+// common case, since most customers never tap — shows nothing, keeping the list clean.
+function verBadge(o){
+  const s=o&&o.verification&&o.verification.status;
+  if(s==="confirmed") return ' <span class="pill ok" title="Customer confirmed this number">✅ number confirmed</span>';
+  if(s==="invalid")   return ' <span class="pill bad" title="Lookup says this number is not valid — likely a typo. Confirm with the customer before dispatch.">⚠️ bad number</span>';
+  if(s==="no_number") return ' <span class="pill bad" title="No phone number on this order">☎️ no number</span>';
+  if(s==="landline")  return ' <span class="pill warn" title="Not a mobile number — can\'t WhatsApp. Call to confirm.">⚠️ not mobile</span>';
+  return ""; // awaiting / unknown -> no badge
+}
+
 function fcard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
   const isCarrier=isCarrierAssignee(o.assignedTo);
@@ -761,7 +776,7 @@ function fcard(o){
   return `
   <div class="ocard" id="fcard-${esc(o.id)}">
     <div class="otop"><div class="onum">${esc(o.name)}</div><div class="ototal">${esc(o.total)}</div></div>
-    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${awbLink(o.bookedAwb)}</span>`:''}</div>
+    <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${verBadge(o)}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${awbLink(o.bookedAwb)}</span>`:''}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
@@ -1474,7 +1489,7 @@ async function loadAllocate(){
       return header+`
       <div class="card">
         <div class="drvtop">
-          <div><div class="nm">${esc(o.name)}</div><div class="hint">${esc(o.customerName||"")}</div></div>
+          <div><div class="nm">${esc(o.name)}</div><div class="hint">${esc(o.customerName||"")}${verBadge(o)}</div></div>
           <span class="pill ${o.assignedTo?'on':'off'}" id="apill-${esc(o.id)}">${o.assignedTo?esc(assigneeLabel(o.assignedTo)):'unassigned'}</span>
         </div>
         ${loc(o)}
