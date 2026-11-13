@@ -796,7 +796,16 @@ async function fulfilOrder(id){
   if(btn){ if(btn.disabled) return; btn.disabled=true; btn.textContent="Working…"; }
   const el=document.getElementById("fcard-"+id); if(el) el.classList.add("fade");
   try{
-    const r=await api("/admin/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    let r=await api("/admin/fulfill",{method:"POST",body:JSON.stringify({orderGid:id})});
+    if(r&&r.held){
+      // Dispatch gate: a risky COD number is held. Let staff override after a check.
+      if(el) el.classList.remove("fade");
+      if(btn){ btn.disabled=false; btn.textContent=isCarrier?"✓ Courier collected":"✓ Fulfilled"; }
+      if(!confirm("⚠️ On hold: "+r.reason+".\n\nThis is a COD order, so it won't dispatch until the number is sorted (call the customer to confirm). Dispatch anyway?")) return;
+      if(el) el.classList.add("fade");
+      if(btn){ btn.disabled=true; btn.textContent="Working…"; }
+      r=await api("/admin/fulfill",{method:"POST",body:JSON.stringify({orderGid:id,override:true})});
+    }
     const ok=r&&r.awb ? "✓ Dispatched — AWB "+r.awb : "✓ Fulfilled";
     toast(r&&r.otwWarning ? (ok+" — customer not messaged: "+r.otwWarning) : ok+" & customer notified");
     if(el){ el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300); }
