@@ -207,6 +207,7 @@ function toast(msg) {
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
 function fmtTime(iso){ if(!iso) return ""; const d=new Date(iso); return isNaN(d)? esc(iso) : d.toLocaleString(); }
+function timeAgo(iso){ if(!iso) return ""; const s=(Date.now()-new Date(iso).getTime())/1000; if(isNaN(s)) return ""; if(s<3600) return Math.max(1,Math.round(s/60))+"m ago"; if(s<86400) return Math.round(s/3600)+"h ago"; return Math.round(s/86400)+"d ago"; }
 
 async function api(path, opts={}) {
   const res = await fetch(API + path, {
@@ -274,6 +275,7 @@ function renderApp(){
   const TABS = [
     ...(hasCap("allocate")      ? [{id:"allocate",    label:"1 · Allocate"}]    : []),
     ...(hasCap("fulfilment")    ? [{id:"fulfillment", label:"2 · Fulfillment"}] : []),
+    ...((hasCap("fulfilment")||hasCap("allocate")) ? [{id:"numbers", label:"⚠️ Numbers"}] : []),
     ...(hasCap("deliveries")    ? [{id:"orders",      label:"Orders"}]          : []),
     ...(hasCap("returns")       ? [{id:"returns",     label:"Returns"}]         : []),
     ...(hasCap("cash")          ? [{id:"cash",        label:"Cash"}]            : []),
@@ -310,6 +312,7 @@ function renderApp(){
   root.querySelector(`.tabs button[data-tab="${TAB}"]`)?.classList.add("on");
   startGeo();
   if(TAB==="fulfillment") loadFulfillment();
+  else if(TAB==="numbers") loadFlagged();
   else if(TAB==="returns") loadReturns();
   else if(TAB==="orders") loadOrders();
   else if(TAB==="allocate") loadAllocate();
@@ -742,6 +745,38 @@ async function loadFulfillList(){
       </details>`;
     }).join("") + '<button class="btn ghost" onclick="loadFulfillList()">Refresh</button>';
   }catch(e){ list.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+
+// Worklist of orders with a flagged number (bad / missing / not-mobile), so staff can
+// sort them out before they hit the dispatch hold. Resolve = "I've handled this number".
+const FLAG_LABEL={invalid:"⚠️ bad number", no_number:"☎️ no number", landline:"⚠️ not mobile"};
+const FLAG_CLS={invalid:"bad", no_number:"bad", landline:"warn"};
+async function loadFlagged(){
+  const panel=document.getElementById("panel");
+  panel.innerHTML='<div class="loading">Loading flagged numbers…</div>';
+  try{
+    const {flagged}=await api("/admin/flagged-numbers");
+    if(!flagged.length){ panel.innerHTML='<div class="empty">✅ No flagged numbers.<br>Every recent order has a usable mobile number.<br><br><button class="btn ghost" style="max-width:200px;margin:0 auto" onclick="loadFlagged()">Refresh</button></div>'; return; }
+    panel.innerHTML =
+      `<div class="hint" style="margin:4px 2px 12px">${flagged.length} order${flagged.length>1?"s":""} to check. Sort the number out in Shopify (COD ones are held from dispatch until you do), then mark it resolved.</div>` +
+      flagged.map(o=>`
+      <div class="ocard" id="flag-${esc(o.orderGid)}" style="margin-bottom:10px">
+        <div class="otop"><div class="onum">${esc(o.name||"")}</div><div class="ototal hint">${esc(timeAgo(o.createdAt))}</div></div>
+        <div class="owho">${o.paymentType==="cod"?'<span class="pill status">COD</span> ':""}<span class="pill ${FLAG_CLS[o.status]||"warn"}">${FLAG_LABEL[o.status]||esc(o.status)}</span></div>
+        ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)} <span class="hint">· as entered</span></a>`:'<div class="orow">☎️ no number on the order</div>'}
+        <div class="oactions"><button class="btn ghost" onclick="resolveNumber('${esc(o.orderGid)}')">✓ Mark resolved</button></div>
+      </div>`).join("") +
+      '<button class="btn ghost" onclick="loadFlagged()">Refresh</button>';
+  }catch(e){ panel.innerHTML='<div class="empty">'+esc(e.message)+'</div>'; }
+}
+async function resolveNumber(gid){
+  if(!confirm("Mark this order's number as sorted? It'll then dispatch and message the customer normally.")) return;
+  try{
+    await api("/admin/resolve-number",{method:"POST",body:JSON.stringify({orderGid:gid})});
+    const el=document.getElementById("flag-"+gid);
+    if(el){ el.style.transition="opacity .3s"; el.style.opacity="0"; setTimeout(()=>el.remove(),300); }
+    toast("✓ Marked resolved");
+  }catch(e){ toast(e.message||"Couldn't update"); }
 }
 
 // Number-verification badge. Shown only when it's actionable: positive (confirmed)
