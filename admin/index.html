@@ -569,6 +569,7 @@ async function loadPeople(){
         <input id="watest" placeholder="+9715…" inputmode="tel" style="flex:1;min-width:150px" onkeydown="if(event.key==='Enter')waTest('otw')" />
         <button class="btn sm" onclick="waTest('otw')" style="padding:12px 16px">📲 On its way</button>
         <button class="btn sm" onclick="waTest('delivered')" style="padding:12px 16px">📦 Delivered</button>
+        <button class="btn sm" onclick="waTest('verify')" style="padding:12px 16px">✅ Confirm number</button>
       </div>
     </div>`:""}`;
   if(canWrite) document.getElementById("addadmin").onclick=addPerson;
