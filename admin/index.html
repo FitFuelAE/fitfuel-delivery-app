@@ -792,6 +792,17 @@ function verBadge(o){
   return ""; // awaiting / unknown -> no badge
 }
 
+// Delivery details the customer sent back on WhatsApp after confirming (pin / alternate
+// number / note). Shown as extra rows on the card so staff and drivers can use them.
+function verExtras(o){
+  const v=o&&o.verification; if(!v) return "";
+  let h="";
+  if(v.lat!=null && v.lng!=null) h+=`<a class="orow" href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank">📍 Shared location pin${v.locLabel?` · ${esc(v.locLabel)}`:""}</a>`;
+  if(v.altPhone) h+=`<a class="orow" href="tel:${esc(v.altPhone)}">📱 Alt number: ${esc(v.altPhone)}</a>`;
+  if(v.note) h+=`<div class="orow">📝 Customer note: ${esc(v.note)}</div>`;
+  return h;
+}
+
 function fcard(o){
   const mapsHref=o.address?"https://maps.google.com/?q="+encodeURIComponent(o.address):"";
   const isCarrier=isCarrierAssignee(o.assignedTo);
@@ -815,6 +826,7 @@ function fcard(o){
     <div class="owho">${esc(o.customerName)}${o.cod?' <span class="pill status">COD</span>':''}${verBadge(o)}${o.assignedTo?` <span class="pill on">${esc(assigneeLabel(o.assignedTo))}</span>`:' <span class="pill off">unallocated</span>'}${o.bookedAwb?` <span class="pill status">AWB ${awbLink(o.bookedAwb)}</span>`:''}</div>
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
+    ${verExtras(o)}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     ${rightAtLeast("fulfilment") ? `<div class="oactions">${actionsHtml}</div>` : ""}
@@ -1231,6 +1243,7 @@ function ocard(o){
     ${o.carrier?`<div class="hint" style="margin-top:8px">🚛 ${esc(carrierName(o.carrier))} · AWB ${awbLink(o.awb)}${o.carrierStatus?` · ${esc(o.carrierStatus)}`:""} — updates automatically as the courier reports</div>`:""}
     ${o.address?`<a class="orow" href="${esc(mapsHref)}" target="_blank">📍 ${esc(o.address)}</a>`:""}
     ${o.phone?`<a class="orow" href="tel:${esc(o.phone)}">📞 ${esc(o.phone)}</a>`:""}
+    ${verExtras(o)}
     ${o.note?`<div class="onote">📝 ${esc(o.note)}</div>`:""}
     <div class="oitems">${o.items.map(i=>`<div><span>${esc(i.title)}${i.variant?` <b style="color:var(--green-d)">· ${esc(i.variant)}</b>`:""}</span><span>×${esc(i.quantity)}</span></div>`).join("")}</div>
     ${rightAtLeast("deliveries") ? `<div class="oactions">
